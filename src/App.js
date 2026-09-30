@@ -1,9 +1,17 @@
 import React, { useEffect, useState } from 'react'
+
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom'
 import { CssBaseline } from '@mui/material'
 import { ThemeProvider, createTheme } from '@mui/material'
 import Home from './screens/Home'
 import Onboarding from './screens/Onboarding'
+
+import { BrowserRouter as Router, Routes, Route } from 'react-router-dom'
+import { CssBaseline } from '@mui/material'
+import { ThemeProvider } from '@mui/styles'
+import { createTheme } from '@mui/styles'
+import Home from './screens/Home'
+
 import { supabase } from './lib/supabase'
 
 const theme = createTheme({
@@ -31,10 +39,14 @@ function App() {
       <Router>
         <Routes>
           <Route path="/" element={session ? <Home /> : null} />
+
           <Route
             path="/onboarding"
             element={!session ? <Onboarding /> : <Navigate to="/" replace />}
           />
+
+          <Route path="/onboarding" element={!session ? <Home /> : null} />
+
         </Routes>
       </Router>
     </ThemeProvider>

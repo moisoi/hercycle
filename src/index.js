@@ -1,7 +1,12 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import { CssBaseline } from '@mui/material'
+
 import { ThemeProvider, createTheme } from '@mui/material'
+
+import { ThemeProvider } from '@mui/styles'
+import { createTheme } from '@mui/styles'
+
 import App from './App'
 import { useTranslation } from 'react-i18next'
 

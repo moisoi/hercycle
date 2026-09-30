@@ -1,0 +1,90 @@
+/* Global styles */
+:root {
+  --primary: #6B2D5D;
+  --primary-hover: #5A254A;
+  --cream: #F5F0E9;
+  --soft-beige: #E8E4DC;
+  --muted-pink: #D4A3B2;
+  --peach: #FFE8E1;
+  --deep-berry: #6B2D5D;
+  --menstrual-rose: #C15B70;
+  --menstrual-warm-gray: #8C8C8C;
+  --follicular-mint: #A8D5B8;
+  --follicular-coral: #FF6B6B;
+  --ovulatory-goldenPeach: #FF8C42;
+  --ovulatory-softAmber: #FFB347;
+  --lavender: #B37DFF;
+  --indigo: #6B5B9A;
+  --onyx: #2D3436;
+  --soft-black: #1A1A2E;
+  --muted: #8D99AE;
+  --disabled: #E0E4E8;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  font-family: 'Inter', 'SF Pro Rounded', 'Helvetica Neue', sans-serif;
+  background: var(--cream);
+  color: var(--onyx);
+  margin: 0;
+  padding: 0;
+}
+
+a {
+  text-decoration: none;
+  color: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+/* Animations */
+@keyframes breathe {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.05); }
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-10px); }
+}
+
+@keyframes shimmer {
+  from { background-position: -200% center; }
+  to { background-position: 200% center; }
+}
+
+.breathe {
+  animation: breathe 3s ease-in-out infinite;
+}
+
+.pulse {
+  animation: pulse 2s ease-in-out infinite;
+}
+
+.float {
+  animation: float 3s ease-in-out infinite;
+}
+
+.shimmer {
+  animation: shimmer 2s ease-in-out infinite;
+}
+
+/* Reduced motion support */
+@media (prefers-reduced-motion: reduce) {
+  .breathe, .pulse, .float, .shimmer {
+    animation: none;
+  }
+  * {
+    transition: none !important;
+  }
+}

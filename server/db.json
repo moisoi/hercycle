@@ -1,0 +1,74 @@
+{
+  "users": [
+    {
+      "id": 1,
+      "username": "testuser",
+      "email": "test@hercycle.com",
+      "password": "$2a$10$8Eyb1Ih/6QcaR2KRAgKreehxnmaXgYTv26LjRBEz/witJIMEgP0w2",
+      "onboardingCompleted": false,
+      "phase": "menstrual",
+      "cycleDay": 1,
+      "coins": 60,
+      "level": 1,
+      "streak": 0,
+      "completedQuests": [
+        1
+      ],
+      "updatedAt": "2026-09-28T06:32:31.698Z"
+    }
+  ],
+  "cycles": [
+    {
+      "id": 1,
+      "userId": 1,
+      "phase": "follicular",
+      "mood": 7,
+      "libido": 8,
+      "intimacyLevel": 5,
+      "period": false,
+      "date": "2026-09-28T06:32:28.362Z",
+      "createdAt": "2026-09-28T06:32:28.362Z"
+    }
+  ],
+  "intimacyLogs": [
+    {
+      "id": 1,
+      "userId": 1,
+      "libido": 8,
+      "intimacyLevel": 4,
+      "preferredTerms": [
+        "romantic",
+        "sensual"
+      ],
+      "trafficLight": "green",
+      "date": "2026-09-28T06:32:31.682Z",
+      "createdAt": "2026-09-28T06:32:31.682Z"
+    }
+  ],
+  "quests": [
+    {
+      "id": 1,
+      "title": "Log mood 4 days this week",
+      "description": "Unlock your PMS pattern card",
+      "target": 4,
+      "reward": 50,
+      "completed": true
+    },
+    {
+      "id": 2,
+      "title": "Try one new self-care activity",
+      "description": "Earn the Self-Care Sorcerer badge",
+      "target": 1,
+      "reward": 100,
+      "completed": false
+    },
+    {
+      "id": 3,
+      "title": "Complete 5 cycle logs",
+      "description": "Earn the Cycle Keeper badge",
+      "target": 5,
+      "reward": 75,
+      "completed": false
+    }
+  ]
+}

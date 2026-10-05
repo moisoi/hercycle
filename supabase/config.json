@@ -1,6 +1,3 @@
 {
-  "projectUrl": "https://aakttvtzjwdtkvgttqga.supabase.co",
-  "anonKey": "sb_publishable_bVGv3uvNXW3z1T5q8FGXKA_ycHgAvHs",
-  "projectId": "aakttvtzjwdtkvgttqga",
-  "created": new Date().toISOString()
+  "projectId": "aakttvtzjwdtkvgttqga"
 }

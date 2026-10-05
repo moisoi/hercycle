@@ -1,36 +1,25 @@
-import React, { useState, useEffect } from 'react'
-import { Card, CardContent, CardHeader, Button, Typography, Avatar } from '@mui/material'
-import { FaDropOfBlood, FaLeaf, FaHeart, FaMoon, FaSun } from 'react-icons/fa'
-import { AiFillSmile, AiOutlineCalendar } from 'react-icons/ai'
-import { GiMascotSpirit } from 'react-icons/gi'
+import React, { useCallback, useEffect, useState } from 'react'
+import { Card, Button, Typography } from '@mui/material'
+import { GiSparkSpirit } from 'react-icons/gi'
 import { useTranslation } from 'react-i18next'
 import { motion } from 'framer-motion'
 
-import { colors, typography } from '../styles'
+import { colors } from '../styles'
 import { supabase } from '../lib/supabase'
 
 const Home = () => {
-  const [currentPhase, setCurrentPhase] = useState('menstrual')
-  const [dayCount, setDayCount] = useState(5)
+  const currentPhase = 'menstrual'
+  const dayCount = 5
   const [cycleStreak, setCycleStreak] = useState(0)
   const [coins, setCoins] = useState(0)
   const [level, setLevel] = useState(1)
   const [session, setSession] = useState(null)
-  const [moodScore, setMoodScore] = useState(5)
-  const [libidoScore, setLibidoScore] = useState(5)
+  const moodScore = 5
+  const libidoScore = 5
 
   const { t } = useTranslation()
 
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session)
-      if (session?.user?.id) {
-        fetchUserProgress(session.user.id)
-      }
-    })
-  }, [])
-
-  const fetchUserProgress = async (userId) => {
+  const fetchUserProgress = useCallback(async (userId) => {
     try {
       const { data, error } = await supabase
         .from('user_progress')
@@ -45,7 +34,18 @@ const Home = () => {
     } catch (err) {
       console.error('Error fetching progress:', err)
     }
-  }
+  }, [])
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session)
+      if (session?.user?.id) {
+        fetchUserProgress(session.user.id)
+      }
+    })
+  }, [fetchUserProgress])
+
+
 
   const phaseColors = {
     menstrual: { bg: '#FDE8EE', border: '#C15B70', icon: '🩸' },
@@ -54,27 +54,11 @@ const Home = () => {
     luteal: { bg: '#F0E6FF', border: '#6B5B9A', icon: '💜' },
   }
 
-  const phaseLabels = {
-    menstrual: 'Menstrual',
-    follicular: 'Follicular',
-    ovulatory: 'Ovulatory',
-    luteal: 'Luteal',
-  }
-
   const quests = [
     { id: 1, title: 'Log mood 4 days this week', description: 'Unlock PMS pattern card', progress: 2, target: 4, reward: 50 },
     { id: 2, title: 'Self-care activity', description: 'Sorcerer badge', progress: 1, target: 1, reward: 100 },
   ]
 
-  const levelData = {
-    1: { title: 'Beginner', coinsNeeded: 0 },
-    2: { title: 'Cycle Novice', coinsNeeded: 100 },
-    3: { title: 'Cycle Enthusiast', coinsNeeded: 250 },
-    4: { title: 'Cycle Veteran', coinsNeeded: 500 },
-    5: { title: 'Cycle Master', coinsNeeded: 1000 },
-  }
-
-  const handlePhaseChange = (phase) => setCurrentPhase(phase)
   const addCoins = async (amount) => {
     if (!session?.user?.id) return
     try {
@@ -129,8 +113,9 @@ const Home = () => {
               </Button>
             )}
           </div>
-        </header>
-        <div style={{ padding: '20px' }}>
+        </div>
+      </header>
+      <div style={{ padding: '20px' }}>
           {/* Phase Banner */}
           <motion.div
             initial="in"
@@ -192,14 +177,14 @@ const Home = () => {
             transition={{ type: "spring", stiffness: 200, damping: 20 }}
             style={{ marginTop: '20px' }}
           >
-            <Typography variant="h5" style={{ color: colors.onyx, marginBottom: '12px' } }}>{t('cycleQuests')}</Typography>
+            <Typography variant="h5" style={{ color: colors.onyx, marginBottom: '12px' }}>{t('cycleQuests')}</Typography>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
               {quests.map((q) => (
                 <motion.div
                   key={q.id}
                   whileHover={{ scale: 1.02 }}
                   transition={{ type: "spring", stiffness: 150 }}
-                  style={{ background: colors.surface, borderRadius: '12px', padding: '15px', border: `1px solid ${colors.muted`}}
+                  style={{ background: colors.surface, borderRadius: '12px', padding: '15px', border: `1px solid ${colors.muted}` }}
                 >
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
                     <Typography variant="subtitle2" style={{ fontWeight: 500 }}>{q.title}</Typography>
@@ -223,7 +208,7 @@ const Home = () => {
             transition={{ type: "spring", stiffness: 200, damping: 20 }}
             style={{ marginTop: '20px' }}
           >
-            <Typography variant="h5" style={{ color: colors.onyx, marginBottom: '12px' } }}>{t('energyMap')}</Typography>
+            <Typography variant="h5" style={{ color: colors.onyx, marginBottom: '12px' }}>{t('energyMap')}</Typography>
             <div style={{ background: colors.surface, borderRadius: '12px', padding: '15px' }}>
               <div style={{ height: '60px', background: 'transparent' }} />
             </div>
@@ -231,34 +216,13 @@ const Home = () => {
 
           {/* Mascot Area */}
           <motion.div style={{ marginTop: '24px', textAlign: 'center' }}>
-            <GiMascotSpirit style={{ width: 60, height: 60, color: colors.primary, margin: '0 auto', display: 'block' }} />
+            <GiSparkSpirit style={{ width: 60, height: 60, color: colors.primary, margin: '0 auto', display: 'block' }} />
             <Typography variant="body2" style={{ marginTop: '12px', color: colors.muted }}>{t('mascotCheer', { streak: cycleStreak })}</Typography>
           </motion.div>
         </div>
-      </header>
     </div>
   )
 }
 
-// State vars
-const [moodScore, setMoodScore] = useState(5)
-const [libidoScore, setLibidoScore] = useState(5)
-
-// Translations helper
-const t = (key, replacements = {}) => {
-  const dict = {
-    dashboard: 'Dashboard', dailyCheckIn: 'Daily Check-In', mood: 'Mood', libido: 'Libido',
-    logCheckIn: 'Log & Continue', cycleQuests: 'Cycle Quests', reward: 'Reward', cycleCoins: 'Cycle Coins',
-    completeQuest: 'Complete', mascotCheer: 'Keep going! You have {streak} day streak.',
-    phase: {
-      menstrual: 'Menstrual', follicular: 'Follicular', ovulatory: 'Ovulatory', luteal: 'Luteal',
-    },
-    login: 'Login',
-    completeQuest: 'Complete',
-    mascotCheer: 'Keep going! You have {streak} day streak.',
-  }
-  if (dict[key] !== undefined) return dict[key]
-  return key
-}
 
 export default Home

@@ -33,6 +33,28 @@ body {
   padding: 0;
 }
 
+.configuration-message {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: var(--cream);
+}
+
+.configuration-message section {
+  width: min(100%, 560px);
+  padding: 32px;
+  border: 1px solid var(--soft-beige);
+  border-radius: 20px;
+  background: #fffdfd;
+  box-shadow: 0 12px 40px rgb(45 52 54 / 10%);
+}
+
+.configuration-message code {
+  color: var(--primary);
+  font-weight: 600;
+}
+
 a {
   text-decoration: none;
   color: inherit;

@@ -1,17 +1,15 @@
 import { createClient } from '@supabase/supabase-js'
 
-
 const supabaseUrl = process.env.REACT_APP_SUPABASE_URL
-const supabaseAnonKey = process.env.REACT_APP_SUPABASE_ANON_KEY
+const supabaseKey =
+  process.env.REACT_APP_SUPABASE_KEY || process.env.REACT_APP_SUPABASE_ANON_KEY
 
-if (!supabaseUrl || !supabaseAnonKey) {
-  throw new Error('Missing Supabase environment variables')
-}
+export const isSupabaseConfigured = Boolean(supabaseUrl && supabaseKey)
 
-const supabaseUrl = 'https://aakttvtzjwdtkvgttqga.supabase.co'
-const supabaseAnonKey = 'sb_publishable_bVGv3uvNXW3z1T5q8FGXKA_ycHgAvHs'
-
-
-export const supabase = createClient(supabaseUrl, supabaseAnonKey)
+// The app shell displays a setup message when the public Supabase credentials are
+// absent, so never construct a client with embedded or placeholder credentials.
+export const supabase = isSupabaseConfigured
+  ? createClient(supabaseUrl, supabaseKey)
+  : null
 
 export default supabase

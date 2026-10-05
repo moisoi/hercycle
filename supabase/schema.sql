@@ -19,26 +19,30 @@ create table if not exists public.user_settings (
   theme_preference text default 'light', -- light, dark, system
   font_size text default 'medium', -- small, medium, large
   tone_preference text default 'balanced', -- playful, serious, balanced
+  phase_selected text not null default 'menstrual', -- menstrual, follicular, ovulatory, luteal
   avatar_url text,
   created_at timestamptz default now(),
   updated_at timestamptz default now()
 );
 
--- Enable RLS on user_settings
+-- Enable row-level security and keep each user's profile private.
 alter table public.user_settings enable row level security;
+alter table public.user_settings add column if not exists phase_selected text not null default 'menstrual';
 
--- Create RLS policies for user_settings
+drop policy if exists "Users can read own settings" on public.user_settings;
+drop policy if exists "Users can insert own settings" on public.user_settings;
+drop policy if exists "Users can update own settings" on public.user_settings;
+drop policy if exists "Service role can all operations" on public.user_settings;
 create policy "Users can read own settings"
-  on public.user_settings for select
+  on public.user_settings for select to authenticated
   using (auth.uid() = user_id);
-
+create policy "Users can insert own settings"
+  on public.user_settings for insert to authenticated
+  with check (auth.uid() = user_id);
 create policy "Users can update own settings"
-  on public.user_settings for update
-  using (auth.uid() = user_id);
-
-create policy "Service role can all operations"
-  on public.user_settings for all
-  with check (true);
+  on public.user_settings for update to authenticated
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
 
 -- ============================================================
 -- 3. CYCLES TABLE (Cycle Tracking)
@@ -56,25 +60,27 @@ create table if not exists public.cycles (
   unique(user_id, date) -- One cycle log per day per user
 );
 
--- Enable RLS on cycles
+-- Enable RLS and restrict cycle data to the signed-in owner.
 alter table public.cycles enable row level security;
 
--- Create RLS policies for cycles
+drop policy if exists "Users can read own cycles" on public.cycles;
+drop policy if exists "Users can insert own cycles" on public.cycles;
+drop policy if exists "Users can update own cycles" on public.cycles;
+drop policy if exists "Users can delete own cycles" on public.cycles;
+drop policy if exists "Service role can all operations" on public.cycles;
 create policy "Users can read own cycles"
-  on public.cycles for select
+  on public.cycles for select to authenticated
   using (auth.uid() = user_id);
-
 create policy "Users can insert own cycles"
-  on public.cycles for insert
+  on public.cycles for insert to authenticated
   with check (auth.uid() = user_id);
-
 create policy "Users can update own cycles"
-  on public.cycles for update
+  on public.cycles for update to authenticated
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
+create policy "Users can delete own cycles"
+  on public.cycles for delete to authenticated
   using (auth.uid() = user_id);
-
-create policy "Service role can all operations"
-  on public.cycles for all
-  with check (true);
 
 -- Create index for performance
 create index idx_cycles_user_id on public.cycles (user_id);
@@ -95,30 +101,28 @@ create table if not exists public.intimacy_logs (
   unique(user_id, date) -- One intimacy log per day per user
 );
 
--- Enable RLS on intimacy_logs (STRICT)
+-- Intimacy information is especially sensitive: authenticated users can
+-- access only rows whose user_id matches their Supabase Auth identity.
 alter table public.intimacy_logs enable row level security;
 
--- Create VERY STRICT RLS policies for intimacy data
--- Users can ONLY read their own intimacy logs
+drop policy if exists "Users can read own intimacy logs" on public.intimacy_logs;
+drop policy if exists "Users can insert own intimacy logs" on public.intimacy_logs;
+drop policy if exists "Users can update own intimacy logs" on public.intimacy_logs;
+drop policy if exists "Users can delete own intimacy logs" on public.intimacy_logs;
+drop policy if exists "Service role can all operations" on public.intimacy_logs;
 create policy "Users can read own intimacy logs"
-  on public.intimacy_logs for select
+  on public.intimacy_logs for select to authenticated
   using (auth.uid() = user_id);
-
 create policy "Users can insert own intimacy logs"
-  on public.intimacy_logs for insert
+  on public.intimacy_logs for insert to authenticated
   with check (auth.uid() = user_id);
-
 create policy "Users can update own intimacy logs"
-  on public.intimacy_logs for update
-  using (auth.uid() = user_id);
-
+  on public.intimacy_logs for update to authenticated
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
 create policy "Users can delete own intimacy logs"
-  on public.intimacy_logs for delete
+  on public.intimacy_logs for delete to authenticated
   using (auth.uid() = user_id);
-
-create policy "Service role can all operations"
-  on public.intimacy_logs for all
-  with check (true);
 
 -- Create index for performance
 create index idx_intimacy_user_id on public.intimacy_logs (user_id);
@@ -139,21 +143,27 @@ create table if not exists public.quests (
   created_at timestamptz default now()
 );
 
--- Enable RLS on quests
+-- Enable RLS; quest rows are owned by one authenticated user.
 alter table public.quests enable row level security;
 
--- Create RLS policies for quests
+drop policy if exists "Users can read own quests" on public.quests;
+drop policy if exists "Users can insert own quests" on public.quests;
+drop policy if exists "Users can update own quests" on public.quests;
+drop policy if exists "Users can delete own quests" on public.quests;
+drop policy if exists "Service role can all operations" on public.quests;
 create policy "Users can read own quests"
-  on public.quests for select
+  on public.quests for select to authenticated
   using (auth.uid() = user_id);
-
+create policy "Users can insert own quests"
+  on public.quests for insert to authenticated
+  with check (auth.uid() = user_id);
 create policy "Users can update own quests"
-  on public.quests for update
+  on public.quests for update to authenticated
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
+create policy "Users can delete own quests"
+  on public.quests for delete to authenticated
   using (auth.uid() = user_id);
-
-create policy "Service role can all operations"
-  on public.quests for all
-  with check (true);
 
 -- Create index for performance
 create index idx_quests_user_id on public.quests (user_id);
@@ -172,33 +182,38 @@ create table if not exists public.user_progress (
   updated_at timestamptz default now()
 );
 
--- Enable RLS on user_progress
+-- Enable RLS and protect progress records by owner.
 alter table public.user_progress enable row level security;
 
--- Create RLS policies for user_progress
+drop policy if exists "Users can read own progress" on public.user_progress;
+drop policy if exists "Users can insert own progress" on public.user_progress;
+drop policy if exists "Users can update own progress" on public.user_progress;
+drop policy if exists "Users can delete own progress" on public.user_progress;
+drop policy if exists "Service role can all operations" on public.user_progress;
 create policy "Users can read own progress"
-  on public.user_progress for select
+  on public.user_progress for select to authenticated
   using (auth.uid() = user_id);
-
+create policy "Users can insert own progress"
+  on public.user_progress for insert to authenticated
+  with check (auth.uid() = user_id);
 create policy "Users can update own progress"
-  on public.user_progress for update
+  on public.user_progress for update to authenticated
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
+create policy "Users can delete own progress"
+  on public.user_progress for delete to authenticated
   using (auth.uid() = user_id);
-
-create policy "Service role can all operations"
-  on public.user_progress for all
-  with check (true);
 
 -- ============================================================
 -- 7. INDEXES & PERFORMANCE OPTIMIZATION
 -- ============================================================
 
--- Grant permissions to public role (for development)
--- In production, you may want to restrict this
-grant all on public.user_settings to public;
-grant all on public.cycles to public;
-grant all on public.intimacy_logs to public;
-grant all on public.quests to public;
-grant all on public.user_progress to public;
+-- Only authenticated users receive table privileges; RLS above restricts
+-- each statement to the current user's rows.
+revoke all on public.user_settings, public.cycles, public.intimacy_logs, public.quests, public.user_progress
+  from public, anon, authenticated;
+grant select, insert, update, delete on public.user_settings, public.cycles, public.intimacy_logs, public.quests, public.user_progress
+  to authenticated;
 
 -- ============================================================
 -- 8. HELPER FUNCTIONS (Optional)
@@ -259,11 +274,11 @@ $$;
 -- 2. Copy and paste the entire schema.sql content
 -- 3. Run the SQL
 -- 4. Go to Supabase Dashboard → Settings → API
--- 5. Note your project URL and anon public key (already provided)
+-- 5. Set the project URL and anon/publishable key in your deployment environment (see .env.example)
 -- 6. Go to Authentication → Settings → Enable Email auth
 -- 7. Go to Storage → Create buckets: avatars, stickers, themes
--- 8. Go to Authentication → RLS Policies → Enable row level security
+-- 8. Review the authenticated-user RLS policies above before launch
 --
 -- After running the schema, your Supabase backend is ready!
 -- Use the supabase.js file created in src/lib/supabase.js
--- to integrate with your React frontend.
+-- to connect the React frontend. Never expose the Supabase service-role key in the browser.

@@ -189,32 +189,35 @@ src/
 - Opt-in community challenges: "7-day mindfulness challenge" with a shared progress bar (no personal data exposed)
 
 ### Technical Stack
-- **Frontend**: React 18 with React Router, Material-UI (MUI) v6, Framer Motion for animations, Chart.js for data visualization, React Icons
-- **Backend**: Node.js + Express.js with Supabase (PostgreSQL, Auth, Storage, Real-time)
+- **Frontend**: React 18 with React Router, Material UI (MUI), Framer Motion for animations, Chart.js for data visualization, React Icons
+- **Backend**: Supabase (PostgreSQL, Auth, Storage, and Realtime) via the Supabase JavaScript client
 - **Animations**: Framer Motion with custom elastic ease curve (cubic-bezier(0.25, 0.46, 0.45, 0.94))
 - **Internationalization**: i18next ready
-- **Deployment**: Vercel (recommended) or any Node.js hosting platform
+- **Deployment**: Vercel or another static hosting provider
 
 ## 🚀 Quick Start
 
+Node.js 24.x is required.
+
 ### Development
 ```bash
+npm install
+cp .env.example .env.local  # add your Supabase project values
 npm start          # Start development server (port 3000)
 npm run build      # Build for production
 npm test           # Run tests
 ```
 
-**Backend requires Supabase:**
-1. Create Supabase project at supabase.com
-2. Run schema SQL in SQL Editor
-3. Enable Email/Password auth
-4. Set up Storage buckets: avatars, stickers, themes
-5. Configure RLS policies
+**Supabase setup:**
+1. Create a Supabase project and run `supabase/schema.sql` in the SQL Editor.
+2. Enable the authentication provider(s) you plan to use.
+3. Configure Storage buckets and review Row Level Security policies before launch.
+4. Copy `.env.example` to `.env.local` and add the project URL and public anon/publishable key.
 
-**Environment Variables** (for Vercel/Node):
+The Create React App client reads these build-time variables (the anon/publishable key is public; never put a service-role key in the browser):
 ```env
-SUPABASE_URL=https://aakttvtzjwdtkvgttqga.supabase.co
-SUPABASE_ANON_KEY=sb_publishable_bVGv3uvNXW3z1T5q8FGXKA_ycHgAvHs
+REACT_APP_SUPABASE_URL=https://your-project.supabase.co
+REACT_APP_SUPABASE_KEY=your-supabase-publishable-or-anon-key
 ```
 
 ### Deployment
@@ -239,18 +242,16 @@ vercel deploy      # Deploy to Vercel
 
 **Frontend**:
 - React 18 + React Router v6
-- Material-UI (MUI) v6.0 components
+- Material UI (MUI) components
 - Framer Motion for all animations (elastic ease: cubic-bezier(0.25, 0.46, 0.45, 0.94))
 - Chart.js via react-chartjs-2 for data visualization
 - React Icons (500+ icons)
 - i18next for internationalization ready
 
 **Backend**:
-- Node.js + Express.js
-- Supabase (PostgreSQL database, Auth, Storage, Real-time)
-- Row Level Security (RLS) policies for data privacy
-- JWT tokens for session management
-- http-proxy-middleware for development proxy
+- Supabase (PostgreSQL database, Auth, Storage, and Realtime)
+- Supabase Auth manages user sessions; the app talks to Supabase directly
+- Row Level Security (RLS) policies scope user data; no Express/JSON/JWT backend is used
 
 **DevOps**:
 - Vercel recommended for deployment
@@ -283,7 +284,7 @@ The app uses Supabase with the following tables (run schema.sql in Supabase SQL 
   1. Select cycle phase (menstrual/follicular/ovulatory/luteal)
   2. Choose app tone (playful/serious/balanced)
   3. Meet the mascot companion
-  4. Complete onboarding (saves preferences to Supabase)
+  4. Complete onboarding (signed-in users save preferences to Supabase)
 
 ### 3. Cycle Log
 - Phase selection wheel

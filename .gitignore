@@ -1,0 +1,17 @@
+# Dependencies and build artifacts
+/node_modules
+/build
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+
+# Runtime data and logs
+*.log
+/uploads
+
+# OS/editor files
+.DS_Store
+.idea/
+.vscode/

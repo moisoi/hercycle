@@ -1,11 +1,10 @@
 # HerCycle Production Backend Plan
 
 ## Current State
-- **Frontend**: React + MUI + Framer Motion at http://localhost:3000
-- **Backend**: Node.js + Express with JSON file storage (`server/db.json`)
-- **Auth**: JWT-based, bcrypt password hashing
-- **Data**: In-memory + JSON file persistence
-- **Status**: Working full-stack app ready for production migration
+- **Frontend**: React + MUI + Framer Motion
+- **Backend and persistence**: Supabase (PostgreSQL, Auth, Storage, and Realtime), accessed with `@supabase/supabase-js`
+- **Auth**: Supabase Auth; no custom JWT or JSON-file backend is included
+- **Status**: The migration recommendations below are retained as historical planning notes; check the application README and `supabase/schema.sql` for the current setup.
 
 ## 🎯 Goal: Production-Ready Backend
 

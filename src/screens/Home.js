@@ -1,228 +1,305 @@
-import React, { useCallback, useEffect, useState } from 'react'
-import { Card, Button, Typography } from '@mui/material'
-import { GiSparkSpirit } from 'react-icons/gi'
-import { useTranslation } from 'react-i18next'
+import React, { useEffect, useMemo, useState } from 'react'
+import { Alert, Button, Skeleton } from '@mui/material'
 import { motion } from 'framer-motion'
+import { FiActivity, FiArrowRight, FiCalendar, FiDroplet, FiHeart, FiMessageCircle, FiPlus, FiShield } from 'react-icons/fi'
+import { GiLotus } from 'react-icons/gi'
+import { useNavigate } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
 
-import { colors } from '../styles'
 import { supabase } from '../lib/supabase'
+import { estimatePeriodEndDate, formatPeriodDate, localDateString } from '../lib/period'
 
-const Home = () => {
-  const currentPhase = 'menstrual'
-  const dayCount = 5
-  const [cycleStreak, setCycleStreak] = useState(0)
-  const [coins, setCoins] = useState(0)
-  const [level, setLevel] = useState(1)
-  const [session, setSession] = useState(null)
-  const moodScore = 5
-  const libidoScore = 5
+const phaseDetails = {
+  menstrual: { icon: '🌙', tint: 'rose' },
+  follicular: { icon: '🌱', tint: 'sage' },
+  ovulatory: { icon: '☀️', tint: 'peach' },
+  luteal: { icon: '🌸', tint: 'lilac' },
+}
 
+const cheerByTone = {
+  playful: {
+    menstrual: 'Soft pace, cozy socks, and absolutely no gold stars required.',
+    follicular: 'Curiosity looks lovely on you. Follow one tiny spark today.',
+    ovulatory: 'Your glow is yours. Take up the space that feels good to you.',
+    luteal: 'One thing at a time, lovely. You are already doing enough.',
+    empty: 'Luna saved you the coziest little corner. Start wherever you are.',
+  },
+  balanced: {
+    menstrual: 'Rest is productive, love. You are doing beautifully.',
+    follicular: 'Let curiosity bloom. You can take one little step at a time.',
+    ovulatory: 'You have a glow all your own. Make space for what feels good to you.',
+    luteal: 'You do not have to do it all today. Be tender with yourself.',
+    empty: 'Luna is saving you a little space. Start wherever you are today.',
+  },
+  serious: {
+    menstrual: 'A slower pace may help today. Your needs deserve attention.',
+    follicular: 'Notice what feels interesting, and choose one small next step.',
+    ovulatory: 'Check in with yourself. Let your own comfort guide your day.',
+    luteal: 'You can lower the bar today. Rest and boundaries are valid choices.',
+    empty: 'Start with one honest check-in. There is no required way to feel.',
+  },
+}
+
+const dateLabel = (date) => new Intl.DateTimeFormat(undefined, { month: 'long', day: 'numeric' }).format(date)
+
+const Home = ({ session }) => {
   const { t } = useTranslation()
-
-  const fetchUserProgress = useCallback(async (userId) => {
-    try {
-      const { data, error } = await supabase
-        .from('user_progress')
-        .select('*')
-        .eq('user_id', userId)
-        .maybeSingle()
-      if (!error && data) {
-        setCycleStreak(data.current_streak || 0)
-        setCoins(data.total_coins || 0)
-        setLevel(data.current_level || 1)
-      }
-    } catch (err) {
-      console.error('Error fetching progress:', err)
-    }
-  }, [])
+  const navigate = useNavigate()
+  const [cycles, setCycles] = useState([])
+  const [settings, setSettings] = useState(null)
+  const [progress, setProgress] = useState(null)
+  const [isLoading, setIsLoading] = useState(Boolean(session?.user?.id))
+  const [loadError, setLoadError] = useState('')
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session)
-      if (session?.user?.id) {
-        fetchUserProgress(session.user.id)
+    let isMounted = true
+
+    const loadDashboard = async () => {
+      if (!session?.user?.id) {
+        setIsLoading(false)
+        return
+      }
+
+      setIsLoading(true)
+      const [cyclesResult, settingsResult, progressResult] = await Promise.all([
+        supabase
+          .from('cycles')
+          .select('id, phase, mood, libido, period, date, period_start_date, period_duration_days')
+          .eq('user_id', session.user.id)
+          .order('date', { ascending: false })
+          .limit(30),
+        supabase
+          .from('user_settings')
+          .select('phase_selected, tone_preference')
+          .eq('user_id', session.user.id)
+          .maybeSingle(),
+        supabase
+          .from('user_progress')
+          .select('current_streak, total_coins, current_level')
+          .eq('user_id', session.user.id)
+          .maybeSingle(),
+      ])
+
+      if (!isMounted) return
+
+      const firstError = cyclesResult.error || settingsResult.error || progressResult.error
+      if (firstError) {
+        console.error('Unable to load dashboard data:', firstError)
+        setLoadError('Some of your data could not be loaded. Please refresh in a moment.')
+      } else {
+        let resolvedSettings = settingsResult.data
+        if (!resolvedSettings) {
+          try {
+            const onboarding = JSON.parse(window.localStorage.getItem('hercycle.onboarding') || '{}')
+            const preferences = JSON.parse(window.localStorage.getItem('hercycle.preferences') || '{}')
+            if (onboarding.phase_selected) {
+              const { error: seedError } = await supabase.from('user_settings').upsert({
+                user_id: session.user.id,
+                onboarding_completed: true,
+                phase_selected: onboarding.phase_selected,
+                tone_preference: onboarding.tone_preference || 'balanced',
+                theme_preference: preferences.theme || 'light',
+                font_size: preferences.fontSize || 'medium',
+                hide_intimacy: Boolean(preferences.hideIntimacy),
+                updated_at: new Date().toISOString(),
+              }, { onConflict: 'user_id' })
+              if (seedError) throw seedError
+              resolvedSettings = {
+                phase_selected: onboarding.phase_selected,
+                tone_preference: onboarding.tone_preference || 'balanced',
+              }
+            }
+          } catch (seedError) {
+            console.warn('Could not sync initial account preferences:', seedError)
+          }
+        }
+        setCycles(cyclesResult.data || [])
+        setSettings(resolvedSettings)
+        setProgress(progressResult.data)
+      }
+      setIsLoading(false)
+    }
+
+    loadDashboard().catch((error) => {
+      console.error('Unable to load dashboard data:', error)
+      if (isMounted) {
+        setLoadError(t('errorGeneric'))
+        setIsLoading(false)
       }
     })
-  }, [fetchUserProgress])
 
-
-
-  const phaseColors = {
-    menstrual: { bg: '#FDE8EE', border: '#C15B70', icon: '🩸' },
-    follicular: { bg: '#E6F7F2', border: '#A8D5B8', icon: '🌿' },
-    ovulatory: { bg: '#FFF4E5', border: '#FF8C42', icon: '❤️' },
-    luteal: { bg: '#F0E6FF', border: '#6B5B9A', icon: '💜' },
-  }
-
-  const quests = [
-    { id: 1, title: 'Log mood 4 days this week', description: 'Unlock PMS pattern card', progress: 2, target: 4, reward: 50 },
-    { id: 2, title: 'Self-care activity', description: 'Sorcerer badge', progress: 1, target: 1, reward: 100 },
-  ]
-
-  const addCoins = async (amount) => {
-    if (!session?.user?.id) return
-    try {
-      const { data: progress } = await supabase
-        .from('user_progress')
-        .select('*')
-        .eq('user_id', session.user.id)
-        .maybeSingle()
-      if (progress) {
-        const newCoins = (progress.total_coins || 0) + amount
-        const newLevel = determineLevel(newCoins)
-        await supabase.from('user_progress').upsert({
-          user_id: session.user.id,
-          total_coins: newCoins,
-          current_level: newLevel,
-        })
-        setCoins(newCoins)
-        setLevel(newLevel)
-      }
-    } catch (err) {
-      console.error(err)
+    return () => {
+      isMounted = false
     }
+  }, [session?.user?.id, t])
+
+  const latestCheckIn = cycles[0]
+  const todayDate = localDateString()
+  const currentPeriodPrediction = cycles.find((entry) => {
+    const endDate = estimatePeriodEndDate(entry.period_start_date, entry.period_duration_days)
+    return Boolean(entry.period_start_date && endDate && entry.period_start_date <= todayDate && endDate >= todayDate)
+  })
+  let localOnboarding = {}
+  try {
+    localOnboarding = JSON.parse(window.localStorage.getItem('hercycle.onboarding') || '{}')
+  } catch {
+    localOnboarding = {}
   }
-  const determineLevel = (coins) => {
-    if (coins >= 1000) return 5
-    if (coins >= 500) return 4
-    if (coins >= 250) return 3
-    if (coins >= 100) return 2
-    return 1
-  }
-  const completeQuest = (q) => addCoins(q.reward)
+  const onboardingPhase = localOnboarding.phase_selected || null
+  const activePhase = latestCheckIn?.phase || settings?.phase_selected || onboardingPhase
+  const phaseInfo = activePhase ? phaseDetails[activePhase] : null
+  const tone = settings?.tone_preference || localOnboarding.tone_preference || 'balanced'
+  const cheerMessage = cheerByTone[tone]?.[activePhase || 'empty'] || cheerByTone.balanced[activePhase || 'empty']
+  const averageMood = useMemo(() => {
+    const values = cycles.map((entry) => Number(entry.mood)).filter(Number.isFinite)
+    return values.length ? Math.round(values.reduce((sum, value) => sum + value, 0) / values.length) : null
+  }, [cycles])
 
   return (
-    <div style={{ minHeight: '100vh', background: colors.background, color: colors.onyx }}>
-      <header style={{ padding: '20px', background: '#FFFDFD', borderBottom: '1px solid #E4E4E7' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <Typography variant="h3" style={{ fontWeight: 600 }}>
-            {t('dashboard')}
-          </Typography>
-          <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-            {session?.user?.id && (
-              <>
-                <span>{coins} {t('cycleCoins')}</span>
-                <Typography variant="body2" style={{ color: colors.muted, fontSize: 12 }}>
-                  Level {level}
-                </Typography>
-              </>
-            )}
-            {!session?.user?.id && (
-              <Button variant="text" style={{ fontSize: 12, color: colors.primary }}>
-                {t('login')}
-              </Button>
-            )}
+    <div className="dashboard-page">
+      {loadError && <Alert severity="warning" className="dashboard-alert">{loadError}</Alert>}
+
+      <motion.section
+        className="dashboard-welcome-row"
+        initial={{ opacity: 0, y: 12 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.35, ease: 'easeOut' }}
+      >
+        <div>
+          <span className="eyebrow-label">A NOTE FROM YOUR BODY</span>
+          <h2>{t('goodMorning')}</h2>
+          <p>{t('dashboardDescription')}</p>
+        </div>
+        <div className="dashboard-date-badge"><FiCalendar aria-hidden="true" /> {dateLabel(new Date())}</div>
+      </motion.section>
+
+      <div className="dashboard-feature-grid">
+        <motion.section
+          className={`phase-spotlight${phaseInfo ? ` phase-spotlight-${phaseInfo.tint}` : ' phase-spotlight-quiet'}`}
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4, delay: 0.05 }}
+        >
+          <div className="phase-spotlight-topline">
+            <span>{t('cycleSpotlight')}</span>
+            <span className="phase-spotlight-orbit" aria-hidden="true">{phaseInfo?.icon || '✧'}</span>
           </div>
+          {isLoading ? (
+            <div className="dashboard-skeleton-group"><Skeleton width="55%" height={46} /><Skeleton width="90%" /><Skeleton width="70%" /></div>
+          ) : activePhase ? (
+            <>
+              <div className="phase-label-row">
+                <span className="phase-symbol" aria-hidden="true">{phaseInfo?.icon}</span>
+                <span className="phase-name">{t(`phase.${activePhase}`)}</span>
+              </div>
+              <p className="phase-description">{t(`phaseDescription.${activePhase}`)}</p>
+              <p className="phase-meta">
+                {latestCheckIn ? `${t('lastCheckIn')}: ${dateLabel(new Date(`${latestCheckIn.date}T12:00:00`))}` : t('noCheckIns')}
+              </p>
+            </>
+          ) : (
+            <>
+              <div className="phase-label-row">
+                <span className="phase-symbol phase-symbol-empty" aria-hidden="true">✧</span>
+                <span className="phase-name">Your rhythm, your way</span>
+              </div>
+              <p className="phase-description">Your first check-in can be as simple as choosing how today feels.</p>
+              <p className="phase-meta">No predictions. Just a little more self-understanding.</p>
+            </>
+          )}
+          <Button className="phase-spotlight-button" onClick={() => navigate('/log')} endIcon={<FiArrowRight aria-hidden="true" />}>
+            {activePhase ? t('logToday') : t('startFirstCheckIn')}
+          </Button>
+        </motion.section>
+
+        <motion.section
+          className="mascot-card"
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4, delay: 0.12 }}
+        >
+          <div className="mascot-card-topline"><span>YOUR LITTLE REMINDER</span><span className="mascot-card-sparkle">✦</span></div>
+          <div className="mascot-illustration" aria-hidden="true">
+            <span className="mascot-halo" />
+            <GiLotus className="mascot-lotus" />
+            <span className="mascot-orbit-dot mascot-orbit-dot-one">✦</span>
+            <span className="mascot-orbit-dot mascot-orbit-dot-two">✧</span>
+          </div>
+          <p className="mascot-name">Luna says</p>
+          <p className="mascot-message">{cheerMessage}</p>
+          <span className="mascot-signoff">with a little love <span aria-hidden="true">♡</span></span>
+        </motion.section>
+      </div>
+
+      {currentPeriodPrediction && (
+        <section className="period-prediction-card" aria-label={t('periodEstimateTitle')}>
+          <span className="period-prediction-icon"><FiDroplet aria-hidden="true" /></span>
+          <div>
+            <span className="eyebrow-label">{t('periodEstimateTitle')}</span>
+            <strong>{t('periodEstimateEnds', { date: formatPeriodDate(estimatePeriodEndDate(currentPeriodPrediction.period_start_date, currentPeriodPrediction.period_duration_days)) })}</strong>
+            <p>{t('periodEstimateDashboardNote')}</p>
+          </div>
+        </section>
+      )}
+
+      <section className="dashboard-stats" aria-label="Your recent activity">
+        <div className="stat-card">
+          <span className="stat-icon stat-icon-rose"><FiActivity aria-hidden="true" /></span>
+          <div><span className="stat-label">{t('checkInCount')}</span><strong>{isLoading ? '—' : cycles.length}</strong></div>
+          <small>last 30 days</small>
         </div>
-      </header>
-      <div style={{ padding: '20px' }}>
-          {/* Phase Banner */}
-          <motion.div
-            initial="in"
-            animate="in"
-            exit="out"
-            transition={{ duration: 0.5 }}
-            style={{ background: phaseColors[currentPhase].bg, borderRadius: '20px', padding: '20px', marginBottom: '20px', border: `2px solid ${phaseColors[currentPhase].border}` }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-              <div style={{ width: 40, height: 40, borderRadius: '12px', background: phaseColors[currentPhase].bg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                {phaseColors[currentPhase].icon}
-              </div>
-              <div>
-                <Typography style={{ fontWeight: 600, color: phaseColors[currentPhase].border }}>
-                  {t(`phase.${currentPhase}`)}
-                </Typography>
-                <Typography variant="body2" style={{ color: colors.muted, fontSize: 12 }}>
-                  {t(`phase.${currentPhase}.desc`, { day: dayCount })}
-                </Typography>
-              </div>
-            </div>
-          </motion.div>
-
-          {/* Daily Check-in Card */}
-          <motion.div
-            variants={{ hidden: { opacity: 0, y: -20 }, visible: { opacity: 1, y: 0 } }}
-            transition={{ type: "spring", stiffness: 200, damping: 20 }}
-          >
-            <Card style={{ background: colors.surface, borderRadius: '20px', padding: '20px', boxShadow: '0 4px 20px rgba(0,0,0,0.08)' }}>
-              <Typography variant="h5" style={{ color: colors.onyx, marginBottom: '12px' }}>{t('dailyCheckIn')}</Typography>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '12px' }}>
-                <div>
-                  <Typography variant="subtitle1" style={{ color: colors.muted, fontSize: 12 }}>{t('mood')}</Typography>
-                  <div style={{ height: 6, borderRadius: '3px', background: colors.muted, marginTop: '4px' }}>
-                    <div style={{ height: '100%', width: `${(moodScore / 10) * 100}%`, background: colors.primary, transition: colors.transitions.fast }} />
-                  </div>
-                  <span style={{ fontSize: 10, color: colors.muted, marginLeft: '4px' }}>{moodScore}/10</span>
-                </div>
-                <div>
-                  <Typography variant="subtitle1" style={{ color: colors.muted, fontSize: 12 }}>{t('libido')}</Typography>
-                  <div style={{ height: 6, borderRadius: '3px', background: colors.muted, marginTop: '4px' }}>
-                    <div style={{ height: '100%', width: `${(libidoScore / 10) * 100}%`, background: colors.ovulatory.goldenPeach, transition: colors.transitions.fast }} />
-                  </div>
-                  <span style={{ fontSize: 10, color: colors.muted, marginLeft: '4px' }}>{libidoScore}/10</span>
-                </div>
-              </div>
-              <Button
-                style={{ width: '100%', background: colors.primary, border: 'none', borderRadius: '10px', color: 'white', padding: '8px', fontWeight: 500, marginTop: '8px', ...colors.transitions.fast }}
-                onClick={() => console.log('Log')}
-              >
-                {t('logCheckIn')}
-              </Button>
-            </Card>
-          </motion.div>
-
-          {/* Quests Section */}
-          <motion.div
-            variants={{ hidden: { opacity: 0, y: -20 }, visible: { opacity: 1, y: 0 } }}
-            transition={{ type: "spring", stiffness: 200, damping: 20 }}
-            style={{ marginTop: '20px' }}
-          >
-            <Typography variant="h5" style={{ color: colors.onyx, marginBottom: '12px' }}>{t('cycleQuests')}</Typography>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-              {quests.map((q) => (
-                <motion.div
-                  key={q.id}
-                  whileHover={{ scale: 1.02 }}
-                  transition={{ type: "spring", stiffness: 150 }}
-                  style={{ background: colors.surface, borderRadius: '12px', padding: '15px', border: `1px solid ${colors.muted}` }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
-                    <Typography variant="subtitle2" style={{ fontWeight: 500 }}>{q.title}</Typography>
-                    <Typography variant="caption" style={{ color: colors.muted, fontSize: 10 }}>{q.progress}/{q.target}</Typography>
-                  </div>
-                  <div style={{ height: 6, borderRadius: '4px', background: colors.muted, marginBottom: '8px' }}>
-                    <div style={{ height: '100%', width: `${(q.progress / q.target) * 100}%`, background: colors.primary, transition: colors.transitions.fast }} />
-                  </div>
-                  <Typography variant="caption" style={{ color: colors.muted, fontSize: 10 }}>{t('reward', { amount: q.reward })} {t('cycleCoins')}</Typography>
-                  <Button size="small" variant="text" style={{ width: '100%', padding: '6px', textAlign: 'left', color: colors.primary, border: 'none' }} onClick={() => completeQuest(q)}>
-                    {t('completeQuest')}
-                  </Button>
-                </motion.div>
-              ))}
-            </div>
-          </motion.div>
-
-          {/* Energy Map */}
-          <motion.div
-            variants={{ hidden: { opacity: 0, y: -20 }, visible: { opacity: 1, y: 0 } }}
-            transition={{ type: "spring", stiffness: 200, damping: 20 }}
-            style={{ marginTop: '20px' }}
-          >
-            <Typography variant="h5" style={{ color: colors.onyx, marginBottom: '12px' }}>{t('energyMap')}</Typography>
-            <div style={{ background: colors.surface, borderRadius: '12px', padding: '15px' }}>
-              <div style={{ height: '60px', background: 'transparent' }} />
-            </div>
-          </motion.div>
-
-          {/* Mascot Area */}
-          <motion.div style={{ marginTop: '24px', textAlign: 'center' }}>
-            <GiSparkSpirit style={{ width: 60, height: 60, color: colors.primary, margin: '0 auto', display: 'block' }} />
-            <Typography variant="body2" style={{ marginTop: '12px', color: colors.muted }}>{t('mascotCheer', { streak: cycleStreak })}</Typography>
-          </motion.div>
+        <div className="stat-card">
+          <span className="stat-icon stat-icon-sage"><FiHeart aria-hidden="true" /></span>
+          <div><span className="stat-label">{t('averageMood')}</span><strong>{isLoading ? '—' : averageMood ? `${averageMood}/10` : '—'}</strong></div>
+          <small>{averageMood ? 'from your check-ins' : 'when you are ready'}</small>
         </div>
+        <div className="stat-card stat-card-action" role="button" tabIndex={0} aria-label="Explore your personal insights" onClick={() => navigate('/insights')} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); navigate('/insights') } }}>
+          <span className="stat-icon stat-icon-lilac"><FiPlus aria-hidden="true" /></span>
+          <div><span className="stat-label">A small next step</span><strong>Explore patterns</strong><small>{progress?.current_streak ? `${progress.current_streak} ${t('dayStreak')}` : 'No streaks required'}</small></div>
+          <FiArrowRight className="stat-arrow" aria-hidden="true" />
+        </div>
+      </section>
+
+      <motion.section
+        className="luna-home-invitation"
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.32, delay: 0.16 }}
+      >
+        <span className="luna-home-invitation-icon" aria-hidden="true"><GiLotus /><i>✦</i></span>
+        <div className="luna-home-invitation-copy">
+          <span>{t('lunaHomeEyebrow')}</span>
+          <strong>{t('lunaHomeHeading')}</strong>
+          <p>{t('lunaHomeDescription')}</p>
+        </div>
+        <button type="button" className="luna-home-invitation-button" onClick={() => navigate('/luna')}>
+          <FiMessageCircle aria-hidden="true" /> <span>{t('lunaHomeButton')}</span> <FiArrowRight aria-hidden="true" />
+        </button>
+      </motion.section>
+
+      {!session && (
+        <motion.section className="private-sync-banner" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+          <span className="private-sync-icon"><FiShield aria-hidden="true" /></span>
+          <div><strong>Your space is ready when you are.</strong><p>Sign in to save your private check-ins and see them on your other devices.</p></div>
+          <Button onClick={() => navigate('/auth')} endIcon={<FiArrowRight aria-hidden="true" />}>{t('signIn')}</Button>
+        </motion.section>
+      )}
+
+      {session && !cycles.length && !isLoading && (
+        <motion.button
+          type="button"
+          className="first-checkin-card"
+          onClick={() => navigate('/log')}
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+        >
+          <span className="first-checkin-icon"><FiPlus aria-hidden="true" /></span>
+          <span><strong>Your first check-in is waiting</strong><small>It takes less than a minute, and you can skip any question.</small></span>
+          <FiArrowRight className="first-checkin-arrow" aria-hidden="true" />
+        </motion.button>
+      )}
     </div>
   )
 }
-
 
 export default Home

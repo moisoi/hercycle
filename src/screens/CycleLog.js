@@ -1,304 +1,332 @@
-import React, { useState, useEffect } from 'react'
-import { Card, CardContent, CardHeader, Button, Typography, Select, MenuItem } from '@mui/material'
-import { FaDropOfBlood, FaLeaf, FaHeart, FaMoon, FaSun } from 'react-icons/fa'
-import { AiFillSmile, AiOutlineCalendar } from 'react-icons/ai'
-import { GiMascotSpirit } from 'react-icons/gi'
-import { useTranslation } from 'react-i18next'
+import React, { useEffect, useState } from 'react'
+import { Alert, Button } from '@mui/material'
 import { motion } from 'framer-motion'
+import { FiCheck, FiDroplet, FiShield } from 'react-icons/fi'
+import { useNavigate } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
 
-import { colors, typography } from '../styles'
-import { supabase } from '../lib/supabase'
+import { isSupabaseConfigured, supabase } from '../lib/supabase'
+import { estimatePeriodEndDate as predictedEndDate, formatPeriodDate as formatDate, localDateString as today } from '../lib/period'
 
-const CycleLog = () => {
-  const [currentPhase, setCurrentPhase] = useState('menstrual')
-  const [libido, setLibido] = useState(5)
-  const [mood, setMood] = useState(5)
-  const [intimacyLevel, setIntimacyLevel] = useState(0)
-  const [showIntimacy, setShowIntimacy] = useState(false)
-  const [session, setSession] = useState(null)
+const phases = [
+  { key: 'menstrual', icon: '🌙', color: '#b95073' },
+  { key: 'follicular', icon: '🌱', color: '#53866b' },
+  { key: 'ovulatory', icon: '☀️', color: '#c57535' },
+  { key: 'luteal', icon: '🌸', color: '#7962a1' },
+]
 
+const readPendingDraft = () => {
+  if (!isSupabaseConfigured) return null
+  try {
+    return JSON.parse(window.sessionStorage.getItem('hercycle.pendingCheckIn') || 'null')
+  } catch {
+    return null
+  }
+}
+
+const CycleLog = ({ session }) => {
   const { t } = useTranslation()
+  const navigate = useNavigate()
+  const [initialDraft] = useState(readPendingDraft)
+  const [phase, setPhase] = useState(initialDraft?.phase || 'menstrual')
+  const [mood, setMood] = useState(initialDraft?.mood || 5)
+  const [energy, setEnergy] = useState(initialDraft?.energy || 5)
+  const [libido, setLibido] = useState(initialDraft?.libido ?? null)
+  const [period, setPeriod] = useState(Boolean(initialDraft?.period))
+  const [date, setDate] = useState(initialDraft?.date || today())
+  const [periodStartDate, setPeriodStartDate] = useState(initialDraft?.period_start_date || initialDraft?.periodStartDate || initialDraft?.date || today())
+  const [periodDurationDays, setPeriodDurationDays] = useState(Number(initialDraft?.period_duration_days || initialDraft?.periodDurationDays) || 5)
+  const [saveState, setSaveState] = useState('idle')
+  const [saveNotice, setSaveNotice] = useState('')
+  const [isLoadingExisting, setIsLoadingExisting] = useState(Boolean(session?.user?.id))
+  const [error, setError] = useState('')
 
-  // Initialize Supabase session
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session)
+    let isMounted = true
+    const loadCheckIn = async () => {
+      if (!session?.user?.id) {
+        setIsLoadingExisting(false)
+        return
+      }
+      if (initialDraft?.date === date) {
+        setPhase(initialDraft.phase || 'menstrual')
+        setMood(Number(initialDraft.mood) || 5)
+        setEnergy(Number(initialDraft.energy) || 5)
+        setLibido(initialDraft.libido ?? null)
+        setPeriod(Boolean(initialDraft.period))
+        setPeriodStartDate(initialDraft.period_start_date || initialDraft.periodStartDate || initialDraft.date || date)
+        setPeriodDurationDays(Number(initialDraft.period_duration_days || initialDraft.periodDurationDays) || 5)
+        setIsLoadingExisting(false)
+        return
+      }
+      setIsLoadingExisting(true)
+      const { data, error: queryError } = await supabase
+        .from('cycles')
+        .select('phase, mood, energy, libido, period, period_start_date, period_duration_days')
+        .eq('user_id', session.user.id)
+        .eq('date', date)
+        .maybeSingle()
+      if (!isMounted) return
+      if (queryError) {
+        console.error('Unable to load the selected check-in:', queryError)
+      } else if (data) {
+        setPhase(data.phase || 'menstrual')
+        setMood(Number(data.mood) || 5)
+        setEnergy(Number(data.energy) || 5)
+        setLibido(data.libido ?? null)
+        setPeriod(Boolean(data.period))
+        setPeriodStartDate(data.period_start_date || date)
+        setPeriodDurationDays(Number(data.period_duration_days) || 5)
+      } else {
+        setPhase('menstrual')
+        setMood(5)
+        setEnergy(5)
+        setLibido(null)
+        setPeriod(false)
+        setPeriodStartDate(date)
+        setPeriodDurationDays(5)
+      }
+      setIsLoadingExisting(false)
+    }
+    loadCheckIn().catch((queryError) => {
+      console.error('Unable to load the selected check-in:', queryError)
+      if (isMounted) setIsLoadingExisting(false)
     })
-  }, [])
+    return () => { isMounted = false }
+  }, [session?.user?.id, date, initialDraft])
 
-  // Save cycle log to Supabase
-  const handleSave = async () => {
-    if (!session?.user?.id) {
-      // Show onboarding or login required
-      console.log('User not logged in')
+  const showPeriodDetails = period
+  const estimatedPeriodEnd = showPeriodDetails ? predictedEndDate(periodStartDate, periodDurationDays) : ''
+
+  const saveDraftAndSignIn = () => {
+    if (isSupabaseConfigured) {
+      try {
+        window.sessionStorage.setItem('hercycle.pendingCheckIn', JSON.stringify({
+          phase,
+          mood,
+          energy,
+          libido,
+          period,
+          date,
+          period_start_date: showPeriodDetails ? periodStartDate : null,
+          period_duration_days: showPeriodDetails ? Number(periodDurationDays) : null,
+        }))
+      } catch {
+        // The guest can still continue to sign in without a temporary draft.
+      }
+    }
+    navigate('/auth')
+  }
+
+  const saveCheckIn = async (event) => {
+    event.preventDefault()
+    setError('')
+    setSaveNotice('')
+
+    const duration = Number(periodDurationDays)
+    if (showPeriodDetails && (!periodStartDate || periodStartDate > today() || duration < 1 || duration > 10)) {
+      setError(t('periodDetailsInvalid'))
       return
     }
 
-    try {
-      const { error } = await supabase.from('cycles').insert({
-        user_id: session.user.id,
-        phase: currentPhase,
-        mood: mood,
-        libido: libido,
-        intimacy_level: intimacyLevel,
-        period: false,
-        date: new Date().toISOString().split('T')[0],
-      })
-
-      if (error) throw error
-
-      // Show success feedback
-      console.log('Cycle logged successfully!')
-      
-      // Award coins - could call a function here
-      // awardCoins(session.user.id, 10, 'cycle_log')
-      
-      // Check quest progress
-      // checkQuestProgress(session.user.id, 'log_cycle')
-
-      // Reset form or navigate
-      // setMood(5)
-      // setLibido(5)
-      // setIntimacyLevel(0)
-    } catch (err) {
-      console.error('Error logging cycle:', err)
+    if (!session?.user?.id) {
+      setSaveState('preview')
+      setSaveNotice(t('guestCheckInNotSaved'))
+      return
     }
-  }
 
-  // Get intimacy tips for phase
-  const getIntimacyTips = async (phase) => {
+    setSaveState('saving')
     try {
-      const { data, error } = await supabase
-        .from('intimacy_logs')
-        .select('*')
-        .eq('user_id', session?.user?.id || '')
-        .maybeSingle()
-
-      if (error) throw error
-
-      const tips = {
-        menstrual: {
-          title: 'Menstrual Phase',
-          color: '#C15B70',
-          body: 'Period sex can ease cramps for some. If you are not into penetration, focus on external touch or non-sexual intimacy.',
-          suggestions: ['External touch only', 'Use a menstrual cup', 'Focus on cuddling', 'Try shower sex']
+      const { error: saveError } = await supabase.from('cycles').upsert(
+        {
+          user_id: session.user.id,
+          phase,
+          mood,
+          libido,
+          energy,
+          period,
+          date,
+          period_start_date: showPeriodDetails ? periodStartDate : null,
+          period_duration_days: showPeriodDetails ? duration : null,
         },
-        follicular: {
-          title: 'Follicular Phase',
-          color: '#A8D5B8',
-          body: 'Energy is rising. Good time to try something new or bring up a desire you have been curious about.',
-          suggestions: ['Try new positions', 'Initiate earlier in the day', 'Experiment with touch', 'Plan a romantic date']
-        },
-        ovulatory: {
-          title: 'Ovulatory Phase',
-          color: '#FF8C42',
-          body: 'Confidence and attraction often peak. If you are into it, this is a great time to initiate or plan a date.',
-          suggestions: ['Use protection if needed', 'High confidence - try something adventurous', 'Initiate intimacy', 'Plan a special date or getaway']
-        },
-        luteal: {
-          title: 'Luteal Phase',
-          color: '#6B5B9A',
-          body: 'You might prefer emotional closeness over intensity. Think cuddles, massage, deep talks.',
-          suggestions: ['Emotional connection and deep talks', 'Sensual massage with oil', 'Cuddling and non-goal-oriented touch', 'Be gentle with yourself if PMS appears']
-        }
+        { onConflict: 'user_id,date' }
+      )
+      if (saveError) throw saveError
+      setSaveState('saved')
+      try {
+        window.sessionStorage.removeItem('hercycle.pendingCheckIn')
+      } catch {
+        // The saved database record is already authoritative.
       }
-
-      return tips[phase] || tips.menstrual
-    } catch (err) {
-      console.error('Error fetching intimacy tips:', err)
-      return null
+      window.setTimeout(() => navigate('/'), 1100)
+    } catch (saveError) {
+      console.error('Unable to save check-in:', saveError)
+      setError(saveError.message || t('errorGeneric'))
+      setSaveState('idle')
     }
-  }
-
-  // Phase change handler
-  const handlePhaseChange = (phase) => {
-    setCurrentPhase(phase)
-  }
-
-  // Libido change handler
-  const handleLibidoChange = (value) => {
-    setLibido(value)
-  }
-
-  // Intimacy level change
-  const handleIntimacyChange = (value) => {
-    setIntimacyLevel(value)
   }
 
   return (
-    <div style={{ minHeight: '100vh', background: colors.background, color: colors.onyx }}>
-      <motion.div
-        initial="hidden"
-        animate="visible"
-        exit="hidden"
-        transition={{ type: "spring", stiffness: 150 }}
-      >
-        <Card style={{
-          margin: '24px',
-          borderRadius: '20px',
-          ...colors.shadows.soft,
-        }}>
-          <CardHeader>
-            <Typography variant="h5" style={{ color: colors.onyx, marginBottom: '16px' }}>
-              {t('logCheckIn')}
-            </Typography>
-          </CardHeader>
-          <CardContent>
+    <div className="checkin-page">
+      <motion.section className="checkin-intro" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
+        <span className="eyebrow-label">A MOMENT FOR YOU</span>
+        <h2>{t('dailyCheckIn')}</h2>
+        <p>{t('checkInDescription')}</p>
+      </motion.section>
 
-            {/* Phase Selection */}
-            <div style={{ mb: '20px' }}>
-              <Typography variant="subtitle1" style={{ color: colors.muted, marginBottom: '8px' }}>
-                {t('currentPhase')}
-              </Typography>
-              <div style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fit, minmax(100px, 1fr))',
-                gap: '8px'
-              }}>
-                {['menstrual', 'follicular', 'ovulatory', 'luteal'].map((phaseKey) => (
-                  <motion.div
-                    key={phaseKey}
-                    whileHover={{ scale: 1.1 }}
-                    style={{
-                      width: '100%',
-                      padding: '12px',
-                      borderRadius: '16px',
-                      background: currentPhase === phaseKey ? colors.primary + '20' : colors.surface,
-                      border: `2px solid ${currentPhase === phaseKey ? colors.primary : colors.muted}`,
-                      color: currentPhase === phaseKey ? colors.primary : colors.muted,
-                      fontWeight: currentPhase === phaseKey ? typography.weight.medium : typography.weight.normal,
-                      cursor: 'pointer',
-                      transition: colors.transitions.fast,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                    }}
-                    onClick={() => handlePhaseChange(phaseKey)}
-                  >
-                    {phaseIndicators[phaseKey].icon}
-                    <span style={{ fontSize: typography.size.xs, marginLeft: '4px' }}>
-                      {phaseLabels[phaseKey]}
-                    </span>
-                  </motion.div>
-                ))}
-              </div>
-            </div>
-
-            {/* Mood & Libio */}
-            <div style={{ mb: '20px', gap: '16px' }}>
-              <div>
-                <Typography variant="subtitle1" style={{ color: colors.muted, fontSize: typography.size.sm }}>
-                  {t('mood')}
-                </Typography>
-                <select
-                  style={{
-                    width: '100%',
-                    borderRadius: '12px',
-                    border: '1px solid #E2E8F0',
-                    padding: '8px 12px',
-                    fontSize: typography.size.sm,
-                    background: colors.cream,
-                  }}
-                  value={mood}
-                  onChange={(e) => handleMoodChange(parseInt(e.target.value))}
-                >
-                  <option value={1}>{t('low')}</option>
-                  <option value={5}>{t('moderate')}</option>
-                  <option value={10}>{t('high')}</option>
-                </select>
-              </div>
-
-              <div>
-                <Typography variant="subtitle1" style={{ color: colors.muted, fontSize: typography.size.sm }}>
-                  {t('libido')}
-                </Typography>
-                <select
-                  style={{
-                    width: '100%',
-                    borderRadius: '12px',
-                    border: '1px solid #E2E8F0',
-                    padding: '8px 12px',
-                    fontSize: typography.size.sm,
-                    background: colors.cream,
-                  }}
-                  value={libido}
-                  onChange={(e) => handleLibidoChange(parseInt(e.target.value))}
-                >
-                  <option value={1}>{t('low')}</option>
-                  <option value={5}>{t('moderate')}</option>
-                  <option value={10}>{t('high')}</option>
-                </select>
-              </div>
-            </div>
-
-            {/* Intimacy Level */}
-            <div style={{ mb: '20px' }}>
-              <Typography variant="subtitle1" style={{ color: colors.muted, marginBottom: '8px' }}>
-                {t('intimacyLevel')}
-              </Typography>
-              <select
-                style={{
-                  width: '100%',
-                  borderRadius: '12px',
-                  border: '1px solid #E2E8F0',
-                  padding: '8px 12px',
-                  fontSize: typography.size.sm,
-                  background: colors.cream,
-                }}
-                value={intimacyLevel}
-                onChange={(e) => handleIntimacyChange(parseInt(e.target.value))}
+      <form className="checkin-form" onSubmit={saveCheckIn}>
+        <section className="form-section">
+          <div className="form-section-heading">
+            <span className="form-step-number">01</span>
+            <div><h3>{t('phaseQuestion')}</h3><p>Pick the phase that feels closest today.</p></div>
+          </div>
+          <div className="phase-choice-grid" role="radiogroup" aria-label={t('phaseQuestion')}>
+            {phases.map((item) => (
+              <motion.button
+                key={item.key}
+                type="button"
+                className={`phase-choice-card${phase === item.key ? ' is-selected' : ''}`}
+                style={{ '--choice-color': item.color }}
+                role="radio"
+                aria-checked={phase === item.key}
+                onClick={() => { setPhase(item.key); setSaveState('idle') }}
+                whileHover={{ y: -3 }}
+                whileTap={{ scale: 0.98 }}
               >
-                <option value={0}>{t('notInMood')}</option>
-                <option value={1}>{t('low')}</option>
-                <option value={2}>{t('medium')}</option>
-                <option value={3}>{t('high')}</option>
-              </select>
-            </div>
+                <span className="phase-choice-icon">{item.icon}</span>
+                <span>{t(`phase.${item.key}`)}</span>
+                {phase === item.key && <FiCheck className="phase-choice-check" aria-hidden="true" />}
+              </motion.button>
+            ))}
+          </div>
 
-            {/* Save Button */}
-            <motion.div
-              whileTap={{ scale: 0.95 }}
-              transition={{ type: "spring", stiffness: 200 }}
-            >
-              <Button
-                fullWidth
-                variant="contained"
-                style={{
-                  background: colors.primary,
-                  border: 'none',
-                  borderRadius: '12px',
-                  color: 'white',
-                  padding: '16px',
-                  fontWeight: typography.weight.medium,
-                  marginTop: '20px',
-                  ...colors.transitions.fast,
-                }}
-                onClick={() => handleSave}
+          <button
+            type="button"
+            className={`period-toggle${period ? ' is-on' : ''}`}
+            aria-pressed={period}
+            onClick={() => { setPeriod((value) => !value); setSaveState('idle') }}
+          >
+            <span className="period-toggle-icon"><FiDroplet aria-hidden="true" /></span>
+            <span><strong>{t('periodQuestion')}</strong><small>Only share what you are comfortable sharing.</small></span>
+            <span className="period-toggle-state">{period ? t('yes') : t('no')}</span>
+          </button>
+
+          {showPeriodDetails && (
+            <div className="period-details-panel">
+              <div className="period-details-heading">
+                <span className="period-details-mark" aria-hidden="true">✿</span>
+                <div><strong>{t('periodDetailsTitle')}</strong><p>{t('periodDetailsDescription')}</p></div>
+              </div>
+              <div className="period-details-fields">
+                <label className="date-field">
+                  <span>{t('periodStartDate')}</span>
+                  <input
+                    type="date"
+                    max={today()}
+                    value={periodStartDate}
+                    onChange={(event) => { setPeriodStartDate(event.target.value); setSaveState('idle'); setSaveNotice('') }}
+                    required
+                  />
+                </label>
+                <label className="period-duration-field">
+                  <span>{t('periodDuration')}</span>
+                  <select value={periodDurationDays} onChange={(event) => { setPeriodDurationDays(Number(event.target.value)); setSaveState('idle'); setSaveNotice('') }}>
+                    {Array.from({ length: 10 }, (_, index) => index + 1).map((days) => (
+                      <option key={days} value={days}>{days} {days === 1 ? t('day') : t('days')}</option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+              {estimatedPeriodEnd && (
+                <div className="period-estimate-card">
+                  <span className="period-estimate-icon"><FiDroplet aria-hidden="true" /></span>
+                  <div><span>{t('periodEstimatedLastDay')}</span><strong>{formatDate(estimatedPeriodEnd)}</strong><small>{t('periodEstimateDisclaimer')}</small></div>
+                </div>
+              )}
+            </div>
+          )}
+        </section>
+
+        <section className="form-section">
+          <div className="form-section-heading">
+            <span className="form-step-number">02</span>
+            <div><h3>How are you arriving today?</h3><p>There is no right answer. Your check-in is just for you.</p></div>
+          </div>
+          <ScaleControl
+            label={t('mood')}
+            value={mood}
+            onChange={(value) => { setMood(value); setSaveState('idle') }}
+            lowLabel={t('moodLow')}
+            highLabel={t('moodHigh')}
+          />
+          <ScaleControl
+            label={t('energy')}
+            value={energy}
+            onChange={(value) => { setEnergy(value); setSaveState('idle') }}
+            lowLabel={t('energyLow')}
+            highLabel={t('energyHigh')}
+          />
+        </section>
+
+        <section className="form-section form-section-optional">
+          <div className="form-section-heading">
+            <span className="form-step-number">03</span>
+            <div><h3>{t('desireOptional')}</h3><p>{t('desireNote')}</p></div>
+          </div>
+          <div className="optional-scale-row" role="group" aria-label={t('desireOptional')}>
+            {[['Skip', null], ['Low', 2], ['Moderate', 5], ['High', 10]].map(([label, value]) => (
+              <button
+                key={label}
+                type="button"
+                className={`scale-chip${libido === value ? ' is-selected' : ''}`}
+                onClick={() => { setLibido(value); setSaveState('idle') }}
               >
-                {t('saveAndContinue')}
-              </Button>
-            </motion.div>
-          </CardContent>
-        </Card>
-      </motion.div>
+                {label}
+              </button>
+            ))}
+          </div>
+          <label className="date-field">
+            <span>Check-in date</span>
+            <input type="date" max={today()} value={date} onChange={(event) => { setDate(event.target.value); setSaveState('idle') }} />
+          </label>
+        </section>
+
+        {error && <Alert severity="error">{error}</Alert>}
+        {saveNotice && <Alert severity="info">{saveNotice}</Alert>}
+        {!session && (
+          <div className="sign-in-nudge">
+            <FiShield aria-hidden="true" />
+            <span>{t('guestDataNotSaved')}</span>
+            <button type="button" onClick={saveDraftAndSignIn}>{t('signInToSaveButton')}</button>
+          </div>
+        )}
+        <Button
+          fullWidth
+          type="submit"
+          variant="contained"
+          disabled={isLoadingExisting || saveState === 'saving'}
+          className="form-submit-button"
+        >
+          {saveState === 'saving' ? 'Saving your check-in…' : saveState === 'saved' ? t('checkInSaved') : saveState === 'preview' ? t('checkInPreviewReady') : session ? t('saveCheckIn') : t('previewCheckIn')}
+        </Button>
+      </form>
     </div>
   )
 }
 
-// Phase labels
-const phaseLabels = {
-  menstrual: 'Menstrual',
-  follicular: 'Follicular',
-  ovulatory: 'Ovulatory',
-  luteal: 'Luteal',
-}
-
-// Intimacy indicators (moved outside)
-const phaseIndicators = {
-  menstrual: { color: '#C15B70', icon: FaDropOfBlood, bg: '#FDE8EE' },
-  follicular: { color: '#A8D5B8', icon: FaLeaf, bg: '#E6F7F2' },
-  ovulatory: { color: '#FF8C42', icon: FaHeart, bg: '#FFF4E5' },
-  luteal: { color: '#6B5B9A', icon: FaPregnant, bg: '#F0E6FF' },
-}
+const ScaleControl = ({ label, value, onChange, lowLabel, highLabel }) => (
+  <div className="scale-control">
+    <div className="scale-control-top"><strong>{label}</strong><span>{value}/10</span></div>
+    <input
+      type="range"
+      min="1"
+      max="10"
+      value={value}
+      onChange={(event) => onChange(Number(event.target.value))}
+      aria-label={label}
+    />
+    <div className="scale-control-ends"><span>{lowLabel}</span><span>{highLabel}</span></div>
+  </div>
+)
 
 export default CycleLog

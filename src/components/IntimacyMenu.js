@@ -67,7 +67,7 @@ const IntimacyMenu = () => {
                   width: '100%',
                   padding: '12px',
                   fontWeight: typography.weight.medium,
-                  ...colors.transitions.fast,
+                  transition: colors.transitions.fast,
                 }}
                 onClick={() => markTried(item.id)}
               >

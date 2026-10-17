@@ -84,7 +84,7 @@ const Dashboard = () => {
               <motion.span
                 initial="0"
                 animate={coins}
-                style={{ ...colors.transitions.fast }}
+                style={{ transition: colors.transitions.fast }}
               >
                 {coins} {t('cycleCoins')}
               </motion.span>
@@ -105,7 +105,7 @@ const Dashboard = () => {
               padding: '24px',
               marginBottom: '24px',
               border: `2px solid ${phaseColors[currentPhase].border}`,
-              ...colors.transitions.normal,
+              transition: colors.transitions.normal,
             }}
           >
             <div className="flex items-start gap-4">
@@ -202,7 +202,7 @@ const Dashboard = () => {
                     padding: '12px',
                     fontWeight: typography.weight.medium,
                     marginTop: '16px',
-                    ...colors.transitions.fast,
+                    transition: colors.transitions.fast,
                   }}
                 >
                   {t('logCheckIn')}

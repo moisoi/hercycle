@@ -1,0 +1,6 @@
+name = "hercycle"
+compatibility_date = "2026-10-14"
+pages_build_output_dir = "./build"
+
+[ai]
+binding = "AI"

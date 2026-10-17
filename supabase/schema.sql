@@ -28,6 +28,7 @@ create table if not exists public.user_settings (
 -- Enable row-level security and keep each user's profile private.
 alter table public.user_settings enable row level security;
 alter table public.user_settings add column if not exists phase_selected text not null default 'menstrual';
+alter table public.user_settings add column if not exists hide_intimacy boolean not null default false;
 
 drop policy if exists "Users can read own settings" on public.user_settings;
 drop policy if exists "Users can insert own settings" on public.user_settings;
@@ -52,16 +53,37 @@ create table if not exists public.cycles (
   user_id uuid references auth.users on delete cascade,
   phase text not null, -- menstrual, follicular, ovulatory, luteal
   mood integer, -- 1-10
-  libido integer, -- 1-10
+  energy integer, -- 1-10
+  libido integer, -- optional, 1-10
   intimacy_level integer, -- 0-5 (traffic light level)
   period boolean default false,
+  period_start_date date,
+  period_duration_days smallint,
   date date not null,
   created_at timestamptz default now(),
-  unique(user_id, date) -- One cycle log per day per user
+  unique(user_id, date), -- One cycle log per day per user
+  constraint cycles_period_duration_days_range
+    check (period_duration_days is null or period_duration_days between 1 and 10)
 );
 
 -- Enable RLS and restrict cycle data to the signed-in owner.
 alter table public.cycles enable row level security;
+alter table public.cycles add column if not exists energy integer;
+alter table public.cycles add column if not exists period_start_date date;
+alter table public.cycles add column if not exists period_duration_days smallint;
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint
+    where conrelid = 'public.cycles'::regclass
+      and conname = 'cycles_period_duration_days_range'
+  ) then
+    alter table public.cycles
+      add constraint cycles_period_duration_days_range
+      check (period_duration_days is null or period_duration_days between 1 and 10);
+  end if;
+end
+$$;
 
 drop policy if exists "Users can read own cycles" on public.cycles;
 drop policy if exists "Users can insert own cycles" on public.cycles;
@@ -83,8 +105,8 @@ create policy "Users can delete own cycles"
   using (auth.uid() = user_id);
 
 -- Create index for performance
-create index idx_cycles_user_id on public.cycles (user_id);
-create index idx_cycles_date on public.cycles (date);
+create index if not exists idx_cycles_user_id on public.cycles (user_id);
+create index if not exists idx_cycles_date on public.cycles (date);
 
 -- ============================================================
 -- 4. INTIMACY LOGS TABLE (SENSITIVE - Strict RLS)
@@ -96,14 +118,31 @@ create table if not exists public.intimacy_logs (
   intimacy_level integer, -- 0-5 (green/yellow/red traffic light)
   traffic_light text, -- 'green', 'yellow', 'red'
   preferred_terms text[], -- array of preferred intimacy terms
+  desire_vibe text not null default 'tender',
   date date not null,
   created_at timestamptz default now(),
-  unique(user_id, date) -- One intimacy log per day per user
+  unique(user_id, date), -- One intimacy log per day per user
+  constraint intimacy_logs_desire_vibe_allowed
+    check (desire_vibe in ('tender', 'playful', 'naughty'))
 );
 
 -- Intimacy information is especially sensitive: authenticated users can
 -- access only rows whose user_id matches their Supabase Auth identity.
 alter table public.intimacy_logs enable row level security;
+alter table public.intimacy_logs add column if not exists desire_vibe text not null default 'tender';
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint
+    where conrelid = 'public.intimacy_logs'::regclass
+      and conname = 'intimacy_logs_desire_vibe_allowed'
+  ) then
+    alter table public.intimacy_logs
+      add constraint intimacy_logs_desire_vibe_allowed
+      check (desire_vibe in ('tender', 'playful', 'naughty'));
+  end if;
+end
+$$;
 
 drop policy if exists "Users can read own intimacy logs" on public.intimacy_logs;
 drop policy if exists "Users can insert own intimacy logs" on public.intimacy_logs;
@@ -125,8 +164,8 @@ create policy "Users can delete own intimacy logs"
   using (auth.uid() = user_id);
 
 -- Create index for performance
-create index idx_intimacy_user_id on public.intimacy_logs (user_id);
-create index idx_intimacy_date on public.intimacy_logs (date);
+create index if not exists idx_intimacy_user_id on public.intimacy_logs (user_id);
+create index if not exists idx_intimacy_date on public.intimacy_logs (date);
 
 -- ============================================================
 -- 5. QUESTS TABLE (Gamification)
@@ -166,7 +205,7 @@ create policy "Users can delete own quests"
   using (auth.uid() = user_id);
 
 -- Create index for performance
-create index idx_quests_user_id on public.quests (user_id);
+create index if not exists idx_quests_user_id on public.quests (user_id);
 
 -- ============================================================
 -- 6. USER PROGRESS TABLE (Coins, Levels, Streaks)
@@ -236,6 +275,8 @@ end
 $$;
 
 -- Function to insert a new cycle log
+-- Remove the previous signature so period details are accepted consistently.
+drop function if exists public.insert_cycle_log(uuid, text, integer, integer, integer, boolean, date);
 create or replace function public.insert_cycle_log(
   p_user_id uuid,
   p_phase text,
@@ -243,7 +284,9 @@ create or replace function public.insert_cycle_log(
   p_libido integer,
   p_intimacy_level integer,
   p_period boolean,
-  p_date date
+  p_date date,
+  p_period_start_date date default null,
+  p_period_duration_days smallint default null
 )
 returns jsonb
 language plpgsql
@@ -251,9 +294,9 @@ as $$
 declare
   v_result jsonb;
 begin
-  insert into public.cycles (user_id, phase, mood, libido, intimacy_level, period, date)
-  values (p_user_id, p_phase, p_mood, p_libido, p_intimacy_level, p_period, p_date)
-  returning * into v_result;
+  insert into public.cycles as cycle (user_id, phase, mood, libido, intimacy_level, period, date, period_start_date, period_duration_days)
+  values (p_user_id, p_phase, p_mood, p_libido, p_intimacy_level, p_period, p_date, p_period_start_date, p_period_duration_days)
+  returning to_jsonb(cycle) into v_result;
 
   -- Update user progress
   update public.user_progress

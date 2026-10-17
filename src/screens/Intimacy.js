@@ -1,377 +1,404 @@
-import React, { useState, useEffect } from 'react'
-import { Card, CardContent, CardHeader, Button, Typography, Select, MenuItem } from '@mui/material'
-import { FaHeart, FaLeaf, FaMoon, FaSun } from 'react-icons/fa'
+import React, { useEffect, useState } from 'react'
+import { Alert, Button } from '@mui/material'
 import { motion } from 'framer-motion'
+import { FiCheck, FiCopy, FiHeart, FiLock, FiShare2, FiShield, FiZap } from 'react-icons/fi'
+import { useNavigate } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
 
-import { colors, typography } from '../styles'
-import { supabase } from '../lib/supabase'
+import { isSupabaseConfigured, supabase } from '../lib/supabase'
+import { localDateString } from '../lib/period'
 
-const Intimacy = () => {
-  const [currentPhase, setCurrentPhase] = useState('menstrual')
-  const [libido, setLibido] = useState(5)
-  const [intimacyLevel, setIntimacyLevel] = useState(3)
-  const [preferredTerms, setPreferredTerms] = useState(['romantic', 'sensual'])
-  const [partnerMode, setPartnerMode] = useState(false)
-  const [trafficLight, setTrafficLight] = useState(null)
-  const [session, setSession] = useState(null)
+const signals = [
+  { key: 'green', icon: '✿' },
+  { key: 'yellow', icon: '☼' },
+  { key: 'red', icon: '♡' },
+]
 
+const terms = ['romantic', 'sensual', 'sexual', 'spontaneous']
+const vibes = ['tender', 'playful', 'naughty']
+
+const readPendingIntimacy = () => {
+  if (!isSupabaseConfigured) return null
+  try {
+    return JSON.parse(window.sessionStorage.getItem('hercycle.pendingIntimacy') || 'null')
+  } catch {
+    return null
+  }
+}
+
+const Intimacy = ({ session }) => {
   const { t } = useTranslation()
+  const navigate = useNavigate()
+  const [initialDraft] = useState(readPendingIntimacy)
+  const [signal, setSignal] = useState(initialDraft?.traffic_light || null)
+  const [comfort, setComfort] = useState(Number(initialDraft?.intimacy_level) || 0)
+  const [selectedTerms, setSelectedTerms] = useState(initialDraft?.preferred_terms || [])
+  const [desire, setDesire] = useState(initialDraft?.libido ?? null)
+  const [desireVibe, setDesireVibe] = useState(initialDraft?.desire_vibe || 'tender')
+  const [cyclePhase, setCyclePhase] = useState(null)
+  const [isLoading, setIsLoading] = useState(Boolean(session?.user?.id))
+  const [saveState, setSaveState] = useState('idle')
+  const [saveNotice, setSaveNotice] = useState('')
+  const [error, setError] = useState('')
+  const [isShareOpen, setIsShareOpen] = useState(false)
+  const [partnerMessage, setPartnerMessage] = useState(() => t('intimacyNoteTender'))
+  const [partnerPhone, setPartnerPhone] = useState('')
+  const [shareNotice, setShareNotice] = useState('')
 
-  // Initialize Supabase session
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session)
+    let isMounted = true
+    const loadToday = async () => {
+      if (!session?.user?.id) {
+        setIsLoading(false)
+        return
+      }
+
+      const [intimacyResult, phaseResult] = await Promise.all([
+        supabase
+          .from('intimacy_logs')
+          .select('libido, intimacy_level, traffic_light, preferred_terms, desire_vibe')
+          .eq('user_id', session.user.id)
+          .eq('date', localDateString())
+          .maybeSingle(),
+        supabase
+          .from('cycles')
+          .select('phase, date')
+          .eq('user_id', session.user.id)
+          .lte('date', localDateString())
+          .order('date', { ascending: false })
+          .limit(1),
+      ])
+
+      if (!isMounted) return
+      if (intimacyResult.error) {
+        setError(intimacyResult.error.message || t('errorGeneric'))
+      } else if (intimacyResult.data) {
+        const data = intimacyResult.data
+        setDesire(data.libido ?? null)
+        setComfort(data.intimacy_level ?? 0)
+        setSignal(data.traffic_light || null)
+        setSelectedTerms(data.preferred_terms || [])
+        setDesireVibe(vibes.includes(data.desire_vibe) ? data.desire_vibe : 'tender')
+        setPartnerMessage(t(`intimacyNote${capitalize(vibes.includes(data.desire_vibe) ? data.desire_vibe : 'tender')}`))
+      }
+      if (!phaseResult.error) setCyclePhase(phaseResult.data?.[0]?.phase || null)
+      setIsLoading(false)
+    }
+
+    loadToday().catch((queryError) => {
+      if (isMounted) {
+        setError(queryError.message || t('errorGeneric'))
+        setIsLoading(false)
+      }
     })
-  }, [])
+    return () => { isMounted = false }
+  }, [session?.user?.id, t])
 
-  // Log intimacy data to Supabase
-  const handleLogIntimacy = async () => {
-    if (!session?.user?.id) return
+  const updateVibe = (nextVibe) => {
+    setDesireVibe(nextVibe)
+    setPartnerMessage(t(`intimacyNote${capitalize(nextVibe)}`))
+    setShareNotice('')
+    setSaveNotice('')
+    setSaveState('idle')
+  }
 
+  const toggleTerm = (term) => {
+    setSaveState('idle')
+    setSaveNotice('')
+    setSelectedTerms((current) => current.includes(term)
+      ? current.filter((item) => item !== term)
+      : [...current, term])
+  }
+
+  const saveReflection = async (event) => {
+    event.preventDefault()
+    setError('')
+    setSaveNotice('')
+
+    if (!session?.user?.id) {
+      setSaveState('preview')
+      setSaveNotice(t('intimacyGuestPreview'))
+      return
+    }
+
+    setSaveState('saving')
     try {
-      const { error } = await supabase.from('intimacy_logs').insert({
+      const { error: saveError } = await supabase.from('intimacy_logs').upsert({
         user_id: session.user.id,
-        libido: libido,
-        intimacy_level: intimacyLevel,
-        preferred_terms: preferredTerms,
-        traffic_light: trafficLight,
-        date: new Date().toISOString().split('T')[0],
-      })
-
-      if (error) throw error
-      console.log('Intimacy logged successfully!')
-      // Could award coins, check quests, etc.
-    } catch (err) {
-      console.error('Error logging intimacy:', err)
+        libido: desire,
+        intimacy_level: comfort,
+        traffic_light: signal,
+        preferred_terms: selectedTerms,
+        desire_vibe: desireVibe,
+        date: localDateString(),
+      }, { onConflict: 'user_id,date' })
+      if (saveError) throw saveError
+      setSaveState('saved')
+      try {
+        window.sessionStorage.removeItem('hercycle.pendingIntimacy')
+      } catch {
+        // The saved database row is authoritative.
+      }
+    } catch (saveError) {
+      console.error('Unable to save private reflection:', saveError)
+      setError(saveError.message || t('errorGeneric'))
+      setSaveState('idle')
     }
   }
 
-  // Get intimacy tips for phase
-  const getIntimacyTips = async () => {
-    const tips = {
-      menstrual: {
-        title: 'Menstrual Phase',
-        color: '#C15B70',
-        body: 'Period sex can ease cramps for some. If you are not into penetration, focus on external touch or non-sexual intimacy.',
-        suggestions: ['External touch only', 'Use a menstrual cup for mess-free period sex', 'Focus on cuddling and emotional connection', 'Try shower sex for easier cleanup']
-      },
-      follicular: {
-        title: 'Follicular Phase',
-        color: '#A8D5B8',
-        body: 'Energy rising. Good time to try something new or bring up a desire you have been curious about.',
-        suggestions: ['Try new positions or activities', 'Initiate intimacy earlier in the day when energy is higher', 'Experiment with different types of touch', 'Plan a romantic date']
-      },
-      ovulatory: {
-        title: 'Ovulatory Phase',
-        color: '#FF8C42',
-        body: 'Confidence and attraction often peak. If you are into it, this is a great time to initiate or plan a date.',
-        suggestions: ['This is peak fertility - use protection if needed', 'High confidence - great time to try something adventurous', 'Initiate intimacy - your desire may be peak', 'Plan a special date or getaway']
-      },
-      luteal: {
-        title: 'Luteal Phase',
-        color: '#6B5B9A',
-        body: 'You might prefer emotional closeness over intensity. Think cuddles, massage, deep talks.',
-        suggestions: ['Focus on emotional connection and deep talks', 'Sensual massage with oil', 'Cuddling and non-goal-oriented touch', 'Be gentle with yourself if PMS symptoms appear']
+  const signInToSave = () => {
+    if (isSupabaseConfigured) {
+      try {
+        window.sessionStorage.setItem('hercycle.pendingIntimacy', JSON.stringify({
+          libido: desire,
+          intimacy_level: comfort,
+          traffic_light: signal,
+          preferred_terms: selectedTerms,
+          desire_vibe: desireVibe,
+        }))
+      } catch {
+        // Continue to sign-in without a temporary draft if storage is unavailable.
       }
     }
-
-    return tips[currentPhase] || tips.menstrual
+    navigate('/auth')
   }
 
-  // Phase change handler
-  const handlePhaseChange = (phase) => {
-    setCurrentPhase(phase)
+  const copyMessage = async () => {
+    const text = partnerMessage.trim()
+    if (!text) return
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text)
+      } else {
+        const copyField = document.createElement('textarea')
+        copyField.value = text
+        copyField.setAttribute('readonly', '')
+        copyField.style.position = 'fixed'
+        copyField.style.opacity = '0'
+        document.body.appendChild(copyField)
+        copyField.select()
+        const copied = document.execCommand('copy')
+        copyField.remove()
+        if (!copied) throw new Error('Clipboard unavailable')
+      }
+      setShareNotice(t('intimacyMessageCopied'))
+    } catch {
+      setShareNotice(t('intimacyCopyUnavailable'))
+    }
   }
 
-  // Libido change
-  const handleLibidoChange = (value) => {
-    setLibido(value)
+  const shareWithPartner = async () => {
+    const text = partnerMessage.trim()
+    if (!text) return
+    setShareNotice('')
+
+    try {
+      if (partnerPhone.trim()) {
+        const phone = partnerPhone.replace(/[^\d+]/g, '')
+        if (!/^\+?\d{5,15}$/.test(phone)) {
+          setShareNotice(t('intimacyPhoneInvalid'))
+          return
+        }
+        window.location.href = `sms:${encodeURIComponent(phone)}?body=${encodeURIComponent(text)}`
+        setShareNotice(t('intimacySmsReady'))
+        return
+      }
+
+      if (navigator.share) {
+        await navigator.share({ title: t('intimacyShareTitle'), text })
+        setShareNotice(t('intimacyShareReady'))
+        return
+      }
+
+      await copyMessage()
+    } catch (shareError) {
+      if (shareError?.name !== 'AbortError') setShareNotice(t('intimacyShareUnavailable'))
+    }
   }
 
-  // Intimacy level change
-  const handleIntimacyLevelChange = (value) => {
-    setIntimacyLevel(value)
-  }
-
-  // Terms change
-  const handleTermsChange = (terms) => {
-    setPreferredTerms(terms)
-  }
-
-  // Partner mode toggle
-  const handlePartnerMode = (enabled) => {
-    setPartnerMode(enabled)
-  }
-
-  // Traffic light change
-  const handleTrafficLight = (color) => {
-    setTrafficLight(color)
-  }
-
-  // Get current tips
-  const tips = getIntimacyTips()
+  const extraFlirty = desire !== null && Number(desire) >= 8
 
   return (
-    <div style={{ minHeight: '100vh', background: colors.background, color: colors.onyx }}>
-      <motion.div
-        initial="hidden"
-        animate="visible"
-        exit="hidden"
-        transition={{ type: "spring", stiffness: 150 }}
-      >
-        <Card style={{
-          margin: '24px',
-          borderRadius: '20px',
-          ...colors.shadows.soft,
-        }}>
-          <CardHeader>
-            <Typography variant="h5" style={{ color: colors.onyx, marginBottom: '16px' }}>
-              {t('intimacyCenter')}
-            </Typography>
-          </CardHeader>
-          <CardContent>
+    <div className="intimacy-page">
+      <motion.section className="intimacy-privacy-card" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
+        <div className="intimacy-privacy-icon"><FiLock aria-hidden="true" /></div>
+        <div>
+          <span className="eyebrow-label">{t('intimacyEyebrow')}</span>
+          <h2>{t('intimacyTitle')}</h2>
+          <p>{t('intimacyDescription')}</p>
+        </div>
+        <span className="intimacy-privacy-badge"><FiShield aria-hidden="true" /> {t('intimacyPrivateBadge')}</span>
+      </motion.section>
 
-            {/* Phase & Libido */}
-            <div style={{ mb: '20px' }}>
-              <Typography variant="h6" style={{ color: colors.muted, marginBottom: '12px' }}>
-                {t('cyclePhase')}
-              </Typography>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(100px, 1fr))', gap: '8px' }}>
-                {['menstrual', 'follicular', 'ovulatory', 'luteal'].map((phaseKey) => (
-                  <motion.div
-                    key={phaseKey}
-                    whileHover={{ scale: 1.1 }}
-                    style={{
-                      width: '100%',
-                      padding: '12px',
-                      borderRadius: '16px',
-                      background: currentPhase === phaseKey ? colors.primary + '20' : colors.surface,
-                      border: `2px solid ${currentPhase === phaseKey ? colors.primary : colors.muted}`,
-                      color: currentPhase === phaseKey ? colors.primary : colors.muted,
-                      fontWeight: currentPhase === phaseKey ? typography.weight.medium : typography.weight.normal,
-                      cursor: 'pointer',
-                      transition: colors.transitions.fast,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                    }}
-                    onClick={() => handlePhaseChange(phaseKey)}
-                  >
-                    {phaseIndicators[phaseKey].icon}
-                    <span style={{ fontSize: typography.size.xs, marginLeft: '4px' }}>
-                      {phaseLabels[phaseKey]}
-                    </span>
-                  </motion.div>
-                ))}
-              </div>
-            </div>
+      {cyclePhase ? (
+        <section className="intimacy-cycle-context">
+          <span className="intimacy-cycle-context-icon" aria-hidden="true"><FiZap /></span>
+          <p>{t('intimacyCycleContext', { phase: t(`phase.${cyclePhase}`) })}</p>
+        </section>
+      ) : (
+        <section className="intimacy-cycle-context">
+          <span className="intimacy-cycle-context-icon" aria-hidden="true"><FiZap /></span>
+          <p>{t('intimacyCycleNoContext')}</p>
+        </section>
+      )}
 
-            {/* Libido */}
-            <div style={{ mb: '20px' }}>
-              <Typography variant="subtitle1" style={{ color: colors.muted, marginBottom: '8px' }}>
-                {t('libido')}
-              </Typography>
-              <select
-                style={{
-                  width: '100%',
-                  borderRadius: '12px',
-                  border: '1px solid #E2E8F0',
-                  padding: '8px 12px',
-                  fontSize: typography.size.sm,
-                  background: colors.cream,
-                }}
-                value={libido}
-                onChange={(e) => handleLibidoChange(parseInt(e.target.value))}
+      <form className="intimacy-form" onSubmit={saveReflection}>
+        <section className="intimacy-section">
+          <div className="intimacy-section-heading">
+            <span className="form-step-number">01</span>
+            <div><h3>{t('consentSignal')}</h3><p>{t('intimacySignalDescription')}</p></div>
+          </div>
+          <div className="consent-signal-grid" role="radiogroup" aria-label={t('consentSignal')}>
+            {signals.map((item) => (
+              <motion.button
+                key={item.key}
+                type="button"
+                className={`consent-signal-card consent-signal-${item.key}${signal === item.key ? ' is-selected' : ''}`}
+                role="radio"
+                aria-checked={signal === item.key}
+                onClick={() => { setSignal(item.key); setSaveState('idle'); setSaveNotice('') }}
+                whileHover={{ y: -3 }}
+                whileTap={{ scale: 0.98 }}
               >
-                <option value={1}>{t('low')}</option>
-                <option value={5}>{t('moderate')}</option>
-                <option value={10}>{t('high')}</option>
-              </select>
-            </div>
+                <span className="consent-signal-symbol" aria-hidden="true">{item.icon}</span>
+                <span>{t(item.key)}</span>
+              </motion.button>
+            ))}
+          </div>
+          {signal && <motion.p className="consent-reflection" key={signal} initial={{ opacity: 0 }} animate={{ opacity: 1 }}>{t(`intimacySignal_${signal}`)}</motion.p>}
+        </section>
 
-            {/* Intimacy Level */}
-            <div style={{ mb: '20px' }}>
-              <Typography variant="subtitle1" style={{ color: colors.muted, marginBottom: '8px' }}>
-                {t('intimacyLevel')}
-              </Typography>
-              <select
-                style={{
-                  width: '100%',
-                  borderRadius: '12px',
-                  border: '1px solid #E2E8F0',
-                  padding: '8px 12px',
-                  fontSize: typography.size.sm,
-                  background: colors.cream,
-                }}
-                value={intimacyLevel}
-                onChange={(e) => handleIntimacyLevelChange(parseInt(e.target.value))}
+        <section className="intimacy-section">
+          <div className="intimacy-section-heading">
+            <span className="form-step-number">02</span>
+            <div><h3>{t('intimacyLevel')}</h3><p>{t('intimacyComfortDescription')}</p></div>
+          </div>
+          <div className="comfort-scale" role="radiogroup" aria-label={t('intimacyLevel')}>
+            {[0, 1, 2, 3, 4, 5].map((value) => (
+              <button
+                key={value}
+                type="button"
+                className={`comfort-scale-button${comfort === value ? ' is-selected' : ''}`}
+                role="radio"
+                aria-checked={comfort === value}
+                aria-label={value === 0 ? t('skip') : t('comfortLevelValue', { value })}
+                onClick={() => { setComfort(value); setSaveState('idle'); setSaveNotice('') }}
               >
-                <option value={1}>{t('low')}</option>
-                <option value={3}>{t('moderate')}</option>
-                <option value={5}>{t('high')}</option>
-              </select>
-            </div>
+                {value === 0 ? t('skip') : value}
+              </button>
+            ))}
+          </div>
+        </section>
 
-            {/* Preferred Terms */}
-            <div style={{ mb: '20px' }}>
-              <Typography variant="subtitle1" style={{ color: colors.muted, marginBottom: '8px' }}>
-                {t('preferredTerms')}
-              </Typography>
-              <select
-                multiple
-                style={{
-                  width: '100%',
-                  borderRadius: '12px',
-                  border: '1px solid #E2E8F0',
-                  padding: '8px 12px',
-                  fontSize: typography.size.sm,
-                  background: colors.cream,
-                  height: 'auto',
-                  minHeight: '100px',
-                }}
-                value={preferredTerms}
-                onChange={(e) => handleTermsChange(e.target.value)}
+        <section className="intimacy-section intimacy-desire-section">
+          <div className="intimacy-section-heading">
+            <span className="form-step-number">03</span>
+            <div><h3>{t('intimacyDesireTitle')}</h3><p>{t('intimacyDesireDescription')}</p></div>
+          </div>
+          <div className="intimacy-desire-topline">
+            <span>{desire === null ? t('intimacyDesireNotChecked') : t('intimacyDesireRating', { value: desire })}</span>
+            {desire !== null && Number(desire) >= 8 && <span className="intimacy-high-desire-badge"><FiZap aria-hidden="true" /> {t('intimacyHighDesire')}</span>}
+          </div>
+          <input
+            className="intimacy-desire-range"
+            type="range"
+            min="1"
+            max="10"
+            step="1"
+            value={desire ?? 5}
+            onChange={(event) => { setDesire(Number(event.target.value)); setSaveState('idle'); setSaveNotice('') }}
+            aria-label={t('intimacyDesireTitle')}
+          />
+          <div className="intimacy-desire-endpoints"><span>{t('intimacyDesireLow')}</span><span>{t('intimacyDesireHigh')}</span></div>
+          <button type="button" className={`intimacy-skip-desire${desire === null ? ' is-selected' : ''}`} onClick={() => { setDesire(null); setSaveState('idle'); setSaveNotice('') }}>{t('skipDesire')}</button>
+        </section>
+
+        <section className="intimacy-section">
+          <div className="intimacy-section-heading">
+            <span className="form-step-number">04</span>
+            <div><h3>{t('intimacyVibeTitle')}</h3><p>{t('intimacyVibeDescription')}</p></div>
+          </div>
+          <div className="intimacy-vibe-grid" role="radiogroup" aria-label={t('intimacyVibeTitle')}>
+            {vibes.map((vibe) => (
+              <button
+                type="button"
+                key={vibe}
+                className={`intimacy-vibe-card intimacy-vibe-${vibe}${desireVibe === vibe ? ' is-selected' : ''}`}
+                role="radio"
+                aria-checked={desireVibe === vibe}
+                onClick={() => updateVibe(vibe)}
               >
-                <option value="romantic">{t('romantic')}</option>
-                <option value="sensual">{t('sensual')}</option>
-                <option value="sexual">{t('sexual')}</option>
-                <option value="spontaneous">{t('spontaneous')}</option>
-              </select>
-            </div>
+                <span className="intimacy-vibe-icon" aria-hidden="true">{vibe === 'tender' ? '♡' : vibe === 'playful' ? '✧' : '✦'}</span>
+                <strong>{t(`intimacyVibe${capitalize(vibe)}`)}</strong>
+                <small>{t(`intimacyVibe${capitalize(vibe)}Description`)}</small>
+                {desireVibe === vibe && <FiCheck className="intimacy-vibe-check" aria-hidden="true" />}
+              </button>
+            ))}
+          </div>
 
-            {/* Partner Mode */}
-            <div style={{ mb: '20px' }}>
-              <Typography variant="subtitle1" style={{ color: colors.muted, marginBottom: '8px' }}>
-                {t('partnerMode')}
-              </Typography>
-              <motion.div
-                whileTap={{ scale: 0.95 }}
-                transition={{ type: "spring", stiffness: 200 }}
+          <div className="intimacy-term-list" role="group" aria-label={t('preferredTerms')}>
+            {terms.map((term) => (
+              <button
+                type="button"
+                key={term}
+                className={`intimacy-term${selectedTerms.includes(term) ? ' is-selected' : ''}`}
+                aria-pressed={selectedTerms.includes(term)}
+                onClick={() => toggleTerm(term)}
               >
-                <Button
-                  variant="outlined"
-                  style={{
-                    width: '100%',
-                    padding: '12px',
-                    border: `2px solid ${colors.primary}`,
-                    borderRadius: '12px',
-                    color: colors.primary,
-                    fontWeight: typography.weight.medium,
-                  }}
-                  onClick={() => handlePartnerMode(!partnerMode)}
-                >
-                  {partnerMode ? t('disablePartner') : t('enablePartner')}
-                </Button>
-              </motion.div>
-              <Typography variant="caption" style={{ color: colors.muted, marginTop: '8px' }}>
-                {t('partnerModeDesc')}
-              </Typography>
+                <FiHeart aria-hidden="true" /> {t(term)}
+              </button>
+            ))}
+          </div>
+        </section>
+
+        {extraFlirty && (
+          <motion.section className="partner-spark-card" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}>
+            <div className="partner-spark-header">
+              <span className="partner-spark-icon"><FiHeart aria-hidden="true" /></span>
+              <div><span className="eyebrow-label">{t('intimacyPartnerEyebrow')}</span><h3>{t('intimacyPartnerTitle')}</h3></div>
+              <span className="partner-spark-glint" aria-hidden="true">✦</span>
             </div>
-
-            {/* Traffic Light System */}
-            <div style={{ mb: '20px' }}>
-              <Typography variant="subtitle1" style={{ color: colors.muted, marginBottom: '8px' }}>
-                {t('consentSignal')}
-              </Typography>
-              <div style={{ display: 'flex', gap: '12px', marginTop: '12px' }}>
-                <motion.div
-                  whileTap={{ scale: 0.9 }}
-                  transition={{ type: "spring", stiffness: 200 }}
-                  style={{
-                    width: 40, height: 40, borderRadius: '50%', background: trafficLight === 'green' ? '#22C55E' : trafficLight === 'yellow' ? '#F59E0B' : '#EF4444', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 'bold', cursor: trafficLight ? 'pointer' : 'default', transition: colors.transitions.fast,
-                  }}
-                  onClick={() => handleTrafficLight('green')}
-                >
-                  '🟢'
-                </motion.div>
-                <motion.div
-                  whileTap={{ scale: 0.9 }}
-                  transition={{ type: "spring", stiffness: 200 }}
-                  style={{
-                    width: 40, height: 40, borderRadius: '50%', background: trafficLight === 'yellow' ? '#F59E0B' : '#FBBF24', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 'bold', cursor: trafficLight ? 'pointer' : 'default', transition: colors.transitions.fast,
-                  }}
-                  onClick={() => handleTrafficLight('yellow')}
-                >
-                  '🟡'
-                </motion.div>
-                <motion.div
-                  whileTap={{ scale: 0.9 }}
-                  transition={{ type: "spring", stiffness: 200 }}
-                  style={{
-                    width: 40, height: 40, borderRadius: '50%', background: trafficLight === 'red' ? '#EF4444' : '#F3F4F6', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#EF4444', fontWeight: 'bold', cursor: trafficLight ? 'pointer' : 'default', transition: colors.transitions.fast,
-                  }}
-                  onClick={() => handleTrafficLight('red')}
-                >
-                  '🔴'
-                </motion.div>
-              </div>
-              <Typography variant="caption" style={{ color: colors.muted, marginTop: '8px' }}>
-                {t('trafficLightDesc')}
-              </Typography>
-            </div>
-
-            {/* Phase-Specific Intimacy Tips */}
-            <motion.div
-              style={{
-                background: `${phaseIndicators[currentPhase].bg}20`,
-                borderRadius: '16px',
-                padding: '20px',
-                marginTop: '20px',
-              }}
-            >
-              <Typography variant="subtitle1" style={{ color: phaseIndicators[currentPhase].color, marginBottom: '12px' }}>
-                {t(`intimacyTip.${currentPhase}`, { phase: phaseLabels[currentPhase] })}
-              </Typography>
-              <Typography variant="body2" style={{ lineHeight: 1.6, color: colors.muted, marginBottom: '0px' }}>
-                {tips?.body || ''}
-              </Typography>
-            </motion.div>
-
-            {/* Save Intimacy Button */}
-            <motion.div
-              whileTap={{ scale: 0.95 }}
-              transition={{ type: "spring", stiffness: 200 }}
-            >
-              <Button
-                fullWidth
-                variant="contained"
-                style={{
-                  background: colors.primary,
-                  border: 'none',
-                  borderRadius: '12px',
-                  color: 'white',
-                  padding: '16px',
-                  fontWeight: typography.weight.medium,
-                  marginTop: '20px',
-                  ...colors.transitions.fast,
-                }}
-                onClick={() => handleLogIntimacy}
-              >
-                {t('saveIntimacy')}
+            <p className="partner-spark-description">{t('intimacyPartnerDescription')}</p>
+            {!isShareOpen ? (
+              <Button type="button" variant="contained" className="partner-spark-open" startIcon={<FiShare2 aria-hidden="true" />} onClick={() => { setIsShareOpen(true); setShareNotice('') }}>
+                {t('intimacyPartnerCompose')}
               </Button>
-            </motion.div>
+            ) : (
+              <div className="partner-share-editor">
+                <label className="partner-message-label" htmlFor="partner-note">{t('intimacyPartnerMessageLabel')}</label>
+                <textarea id="partner-note" rows={3} maxLength={500} value={partnerMessage} onChange={(event) => { setPartnerMessage(event.target.value); setShareNotice('') }} />
+                <label className="partner-phone-label" htmlFor="partner-phone">{t('intimacyPartnerPhoneLabel')}<span>{t('optional')}</span></label>
+                <input id="partner-phone" type="tel" autoComplete="tel" inputMode="tel" placeholder={t('intimacyPartnerPhonePlaceholder')} value={partnerPhone} onChange={(event) => setPartnerPhone(event.target.value)} />
+                <div className="partner-share-actions">
+                  <Button type="button" variant="contained" startIcon={<FiShare2 aria-hidden="true" />} onClick={shareWithPartner} disabled={!partnerMessage.trim()}>
+                    {t('intimacyPartnerShare')}
+                  </Button>
+                  <button type="button" className="partner-copy-button" onClick={copyMessage} disabled={!partnerMessage.trim()}><FiCopy aria-hidden="true" /> {t('intimacyPartnerCopy')}</button>
+                </div>
+                {shareNotice && <p className="partner-share-notice" role="status">{shareNotice}</p>}
+                <small className="partner-share-privacy"><FiShield aria-hidden="true" /> {t('intimacyPartnerPrivacy')}</small>
+              </div>
+            )}
+          </motion.section>
+        )}
 
-          </CardContent>
-        </Card>
-      </motion.div>
+        {error && <Alert severity="error">{error}</Alert>}
+        {saveNotice && <Alert severity="info">{saveNotice}</Alert>}
+        {!session && (
+          <div className="intimacy-signin-note">
+            <FiShield aria-hidden="true" />
+            <span>{t('intimacyGuestDataNote')}</span>
+            <button type="button" onClick={signInToSave}>{t('intimacySignInToSave')}</button>
+          </div>
+        )}
+        <Button type="submit" variant="contained" fullWidth disabled={isLoading || saveState === 'saving'} className="form-submit-button">
+          {saveState === 'saving' ? t('savingPrivateReflection') : saveState === 'saved' ? t('intimacySaved') : saveState === 'preview' ? t('intimacyPreviewReady') : session ? t('saveIntimacy') : t('previewIntimacy')}
+        </Button>
+      </form>
     </div>
   )
 }
 
-// Phase labels (moved outside)
-const phaseLabels = {
-  menstrual: 'Menstrual',
-  follicular: 'Follicular',
-  ovulatory: 'Ovulatory',
-  luteal: 'Luteal',
-}
-
-// Phase indicators (moved outside)
-const phaseIndicators = {
-  menstrual: { color: '#C15B70', icon: '🩸', bg: '#FDE8EE' },
-  follicular: { color: '#A8D5B8', icon: '🌿', bg: '#E6F7F2' },
-  ovulatory: { color: '#FF8C42', icon: '❤️', bg: '#FFF4E5' },
-  luteal: { color: '#6B5B9A', icon: '💜', bg: '#F0E6FF' },
-}
+const capitalize = (value) => value.charAt(0).toUpperCase() + value.slice(1)
 
 export default Intimacy

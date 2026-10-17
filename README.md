@@ -140,6 +140,10 @@ HerCycle combines elegant design with practical functionality, offering a premiu
 3. **Cycle Log** - Track mood, libido, intimacy per cycle day
 4. **Insights** - Cycle data visualization and key insights
 5. **Settings** - Appearance, font size, notifications, privacy controls
+6. **Intimacy** - Private, user-led check-ins with optional manual partner sharing
+7. **Luna** - Consent-forward companion chat, optional cycle context, and local-only fallback replies
+
+For Cloudflare Pages Workers AI binding and runtime variable setup, see [`LUNA_SETUP.md`](./LUNA_SETUP.md).
 
 ## Getting Started
 
@@ -156,7 +160,7 @@ The app is running at `http://localhost:3000`.
 src/
   components/      - Reusable UI components (Dashboard, IntimacyMenu)
   screens/         - Full-screen pages (Onboarding, Home, CycleLog, Insights, Settings)
-  styles/          - Design system (colors.js, typography.js, index.css)
+  styles/          - Design system (base.css, Luna styles, colors.js, typography.js)
   index.js         - Entry point with i18next setup
 ```
 
@@ -193,7 +197,7 @@ src/
 - **Backend**: Supabase (PostgreSQL, Auth, Storage, and Realtime) via the Supabase JavaScript client
 - **Animations**: Framer Motion with custom elastic ease curve (cubic-bezier(0.25, 0.46, 0.45, 0.94))
 - **Internationalization**: i18next ready
-- **Deployment**: Vercel or another static hosting provider
+- **Deployment**: Cloudflare Pages with Functions for runtime configuration and optional Workers AI
 
 ## 🚀 Quick Start
 
@@ -209,22 +213,19 @@ npm test           # Run tests
 ```
 
 **Supabase setup:**
-1. Create a Supabase project and run `supabase/schema.sql` in the SQL Editor.
-2. Enable the authentication provider(s) you plan to use.
-3. Configure Storage buckets and review Row Level Security policies before launch.
-4. Copy `.env.example` to `.env.local` and add the project URL and public anon/publishable key.
+1. For a new project, run `supabase/schema.sql` in the SQL Editor. For an existing HerCycle project, run `supabase/migrations/20261015000000_period_intimacy_metadata.sql` to align the profile/cycle columns, add the period and intimacy-vibe fields, and refresh owner-only RLS permissions.
+2. Enable Email authentication and configure the deployed app URL in Supabase Auth's Site URL / allowed redirects.
+3. Review the authenticated-user Row Level Security policies before launch.
 
-The Create React App client reads these build-time variables (the anon/publishable key is public; never put a service-role key in the browser):
-```env
-REACT_APP_SUPABASE_URL=https://your-project.supabase.co
-REACT_APP_SUPABASE_KEY=your-supabase-publishable-or-anon-key
-```
+For a plain local Create React App run, optional `.env.local` build variables are `REACT_APP_SUPABASE_URL` and `REACT_APP_SUPABASE_KEY` (public anon/publishable key only). Without Supabase configuration the app still opens in guest preview mode; guests can explore, but private cycle and intimacy entries are not saved.
+
+For **Cloudflare Pages**, set `SUPABASE_URL` and `SUPABASE_ANON_KEY` as Pages Function runtime variables for Preview and Production. `/api/config` provides the same-origin browser client with only the public key; never add a service-role key to a `REACT_APP_*` variable or `SUPABASE_ANON_KEY`. `public/_routes.json` scopes Functions to `/api/*`; the Pages SPA fallback handles client routes without a broad `_redirects` rewrite. Enable the Workers AI binding named `AI` to provide consent-gated Luna replies. See [`LUNA_SETUP.md`](./LUNA_SETUP.md) for deployment details.
 
 ### Deployment
 ```bash
 npm run build      # Build production files
-vercel deploy      # Deploy to Vercel
-# Or: npm start      # Development mode
+# Deploy the build/ directory and repository-root functions/ to Cloudflare Pages
+# Or: npm start      # Local development mode
 ```
 
 ## 📊 Screen Overview
@@ -233,9 +234,9 @@ vercel deploy      # Deploy to Vercel
 |--------|------------|
 | **Home** | Dashboard with phase banner, daily check-in, energy map, mascot companion |
 | **Onboarding** | 4-step setup: phase selection → tone choice → mascot introduction |
-| **CycleLog** | Track mood, libido, intimacy per cycle day |
+| **CycleLog** | Guest-friendly daily check-ins, period start and duration, estimated last day, mood, energy, and optional desire |
 | **Insights** | Cycle data visualization and key insights |
-| **Intimacy** | Consent system, intimacy menu, partner mode |
+| **Intimacy** | Private consent and vibe check-ins, optional user-edited partner sharing, no automatic messages |
 | **Settings** | Theme, font size, notifications, privacy controls |
 
 ## 🛠 Technology Stack
@@ -254,8 +255,8 @@ vercel deploy      # Deploy to Vercel
 - Row Level Security (RLS) policies scope user data; no Express/JSON/JWT backend is used
 
 **DevOps**:
-- Vercel recommended for deployment
-- Environment variables for Supabase credentials
+- Cloudflare Pages Functions for runtime public Supabase configuration and optional Workers AI
+- Supabase publishable/anon key only in browser-facing configuration; no service-role key
 - GitHub repository for version control
 
 ## 📊 Data Model (Supabase)
@@ -263,8 +264,8 @@ vercel deploy      # Deploy to Vercel
 The app uses Supabase with the following tables (run schema.sql in Supabase SQL Editor):
 
 - **user_settings**: onboarding status, theme preference, font size, tone preference
-- **cycles**: cycle tracking (mood, libido, phase, period, date)
-- **intimacy_logs**: intimacy data (strictly RLS-protected, user-scoped only)
+- **cycles**: cycle tracking (mood, energy, phase, period, period start date, period duration, date)
+- **intimacy_logs**: user-selected intimacy signal, optional desire rating, and tender/playful/naughty vibe (strictly RLS-protected, user-scoped only; partner messages and contacts are not stored)
 - **quests**: gamification quests (progress, rewards, completion status)
 - **user_progress**: coins, levels, streak tracking
 

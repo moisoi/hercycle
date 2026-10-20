@@ -11,7 +11,7 @@ import Intimacy from './screens/Intimacy'
 import Journey from './screens/Journey'
 import Insights from './screens/Insights'
 import Settings from './screens/Settings'
-import { isSupabaseConfigured, supabase } from './lib/supabase'
+import { initializeSupabase } from './lib/supabase'
 import { syncAccount } from './lib/sync'
 import { KEYS, useRaw, useStoredJson } from './lib/store'
 import { getProfile } from './lib/repo'
@@ -41,26 +41,33 @@ const App = () => {
   }, [profile.fontSize])
 
   useEffect(() => {
-    if (!isSupabaseConfigured || !supabase) {
-      setSession(null)
-      return undefined
-    }
+    // The client is configured at build time or from /api/config on Cloudflare Pages. Guest mode
+    // still works when neither is available, so this always resolves to a session or null.
     let mounted = true
-    const { data } = supabase.auth.onAuthStateChange((_event, nextSession) => {
-      if (mounted) setSession(nextSession)
+    let subscription = null
+    initializeSupabase().then((client) => {
+      if (!mounted) return
+      if (!client) {
+        setSession(null)
+        return
+      }
+      const { data } = client.auth.onAuthStateChange((_event, nextSession) => {
+        if (mounted) setSession(nextSession)
+      })
+      subscription = data.subscription
+      client.auth
+        .getSession()
+        .then(({ data: result, error }) => {
+          if (error) throw error
+          if (mounted) setSession(result.session)
+        })
+        .catch(() => {
+          if (mounted) setSession(null)
+        })
     })
-    supabase.auth
-      .getSession()
-      .then(({ data: result, error }) => {
-        if (error) throw error
-        if (mounted) setSession(result.session)
-      })
-      .catch(() => {
-        if (mounted) setSession(null)
-      })
     return () => {
       mounted = false
-      data.subscription.unsubscribe()
+      subscription?.unsubscribe()
     }
   }, [])
 

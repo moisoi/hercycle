@@ -1,0 +1,3 @@
+# Pages Functions handle the /api/* endpoints before static routing.
+# Cloudflare Pages provides the SPA fallback automatically when no 404.html is present.
+# Avoid a /* -> /index.html rewrite here: Wrangler detects it as an infinite loop.

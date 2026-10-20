@@ -164,7 +164,11 @@
       "Is cramping normal?",
       "How do I talk to my partner about what I want?",
       "What is a fertile window?"
-    ]
+    ],
+    "aiLabel": "Smarter AI replies",
+    "aiHint": "Sends your recent messages and a cycle summary (phase, mood, energy, period starts) to Cloudflare Workers AI. Notes and intimacy logs are never sent.",
+    "aiSignIn": "Sign in to turn on smarter AI replies. Luna still answers on this device.",
+    "aiFallback": "Smarter replies are unavailable right now, so here is an on-device answer."
   },
   "checkIn": {
     "title": "Check in",

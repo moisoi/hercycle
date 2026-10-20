@@ -5,8 +5,11 @@ import { LuMessageCircle, LuRotateCcw, LuSend, LuX } from 'react-icons/lu'
 
 import { buildLunaProfile } from '../lib/cycle'
 import { replyTo } from '../lib/luna'
+import { readAiPreference, requestLunaReply, summarizeCycles, toCycleRecords, writeAiPreference } from '../lib/lunaAi'
 import { KEYS, useStoredJson } from '../lib/store'
-import { getProfile, DEFAULT_JOURNEY } from '../lib/repo'
+import { getProfile, DEFAULT_JOURNEY, getCheckins } from '../lib/repo'
+import { useSession } from '../lib/session'
+import { Switch } from './Controls'
 
 const EMPTY = Object.freeze({})
 const EMPTY_LIST = Object.freeze([])
@@ -49,6 +52,16 @@ const LunaChat = () => {
     [profileStore, checkins, journey.intentions]
   )
 
+  const { session } = useSession()
+  const userId = session?.user?.id
+  const accessToken = session?.access_token
+  const [aiPreference, setAiPreference] = useState(() => readAiPreference(userId))
+  useEffect(() => {
+    setAiPreference(readAiPreference(userId))
+  }, [userId])
+  // AI replies need explicit consent and a signed-in session. Everything else stays on the device.
+  const aiOn = aiPreference === 'yes' && Boolean(accessToken)
+
   const greeting = () => ({ id: 0, role: 'luna', text: t('luna.greeting'), topic: null })
   const [open, setOpen] = useState(false)
   const [messages, setMessages] = useState(() => [greeting()])
@@ -56,9 +69,19 @@ const LunaChat = () => {
   const [busy, setBusy] = useState(false)
   const nextId = useRef(1)
   const timer = useRef(null)
+  const aiRequest = useRef(null)
   const threadEnd = useRef(null)
 
-  useEffect(() => () => window.clearTimeout(timer.current), [])
+  useEffect(
+    () => () => {
+      window.clearTimeout(timer.current)
+      aiRequest.current?.abort()
+    },
+    []
+  )
+
+  const appendLuna = (text, topic = null) =>
+    setMessages((current) => [...current, { id: nextId.current++, role: 'luna', text, topic }])
 
   useEffect(() => {
     threadEnd.current?.scrollIntoView?.({ block: 'nearest' })
@@ -72,18 +95,50 @@ const LunaChat = () => {
     setMessages(history)
     setDraft('')
     setBusy(true)
-    // A short pause makes Luna feel present. It does not block anything else on the page.
-    timer.current = window.setTimeout(() => {
+
+    const answerLocally = () => {
       const reply = replyTo(text, { lang, profile: summary, history })
-      setMessages((current) => [...current, { id: nextId.current++, role: 'luna', text: reply.text, topic: reply.topic }])
+      appendLuna(reply.text, reply.topic)
       setBusy(false)
-    }, 380)
+    }
+
+    if (aiOn) {
+      const controller = new AbortController()
+      aiRequest.current = controller
+      const modelMessages = history.map((item) => ({ role: item.role === 'luna' ? 'assistant' : 'user', content: item.text }))
+      const cycleSummary = summarizeCycles(toCycleRecords(getCheckins()))
+      requestLunaReply(accessToken, modelMessages, cycleSummary, controller.signal)
+        .then((reply) => {
+          appendLuna(reply)
+          setBusy(false)
+        })
+        .catch(() => {
+          if (controller.signal.aborted) return
+          // Explain the fallback once, then answer on the device so the conversation keeps going.
+          appendLuna(t('luna.aiFallback'))
+          answerLocally()
+        })
+        .finally(() => {
+          if (aiRequest.current === controller) aiRequest.current = null
+        })
+      return
+    }
+
+    // A short pause makes Luna feel present. It does not block anything else on the page.
+    timer.current = window.setTimeout(answerLocally, 380)
+  }
+
+  const changeAi = (on) => {
+    const preference = on ? 'yes' : 'no'
+    setAiPreference(preference)
+    writeAiPreference(userId, preference)
   }
 
   const suggestions = Array.isArray(t('luna.suggestions', { returnObjects: true })) ? t('luna.suggestions', { returnObjects: true }) : []
 
   const reset = () => {
     window.clearTimeout(timer.current)
+    aiRequest.current?.abort()
     setBusy(false)
     setMessages([greeting()])
   }
@@ -128,6 +183,20 @@ const LunaChat = () => {
                 </button>
               </div>
             </header>
+
+            <div style={{ padding: '10px 14px', borderBottom: '1px solid var(--line)', background: 'var(--surface-2)' }}>
+              {session?.user ? (
+                <Switch
+                  id="luna-ai"
+                  checked={aiPreference === 'yes'}
+                  onChange={changeAi}
+                  label={t('luna.aiLabel')}
+                  hint={t('luna.aiHint')}
+                />
+              ) : (
+                <p className="muted" style={{ margin: 0, fontSize: '0.84rem' }}>{t('luna.aiSignIn')}</p>
+              )}
+            </div>
 
             <div className="luna-thread" role="log" aria-live="polite">
               {messages.map((message) => (

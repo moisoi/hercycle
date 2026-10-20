@@ -1,0 +1,277 @@
+
+
+/* Luna: a bright, private conversation space */
+.app-main-column { position: relative; z-index: 1; }
+.app-topbar, .app-page-content { position: relative; z-index: 1; }
+.app-sparkle-field { position: fixed; z-index: 0; top: 142px; right: 18px; bottom: 18px; left: 266px; overflow: hidden; pointer-events: none; }
+.app-sparkle-field span { position: absolute; display: block; color: #c292b0; opacity: 0.32; animation: app-sparkle-float 7s ease-in-out infinite; }
+.app-sparkle-field span:nth-child(1) { top: 16%; right: 9%; font-size: 17px; }
+.app-sparkle-field span:nth-child(2) { top: 56%; right: 3%; color: #9bb09b; font-size: 13px; animation-delay: -2.5s; }
+.app-sparkle-field span:nth-child(3) { top: 80%; left: 8%; color: #d2a7bd; font-size: 11px; animation-delay: -4s; }
+@keyframes app-sparkle-float { 0%, 100% { opacity: 0.2; transform: translateY(0) scale(0.92) rotate(-8deg); } 50% { opacity: 0.65; transform: translateY(-8px) scale(1.08) rotate(8deg); } }
+
+.luna-page { width: min(100%, 1320px); margin: 0 auto; }
+.luna-layout { display: grid; grid-template-columns: minmax(0, 1fr) 286px; align-items: stretch; gap: 16px; }
+.luna-chat-card { display: flex; min-width: 0; height: min(760px, calc(100dvh - 250px)); min-height: 560px; flex-direction: column; overflow: hidden; border: 1px solid #eadfe7; border-radius: 23px; background: rgb(255 253 252 / 96%); box-shadow: 0 16px 48px rgb(74 45 68 / 8%), 0 2px 8px rgb(74 45 68 / 4%); }
+.luna-chat-header { display: flex; min-height: 76px; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 18px; border-bottom: 1px solid #f0e8ee; background: linear-gradient(115deg, #fff9fc, #f8f6f1); }
+.luna-chat-brand { display: flex; min-width: 0; align-items: center; gap: 11px; }
+.luna-avatar { position: relative; display: grid; flex: 0 0 auto; place-items: center; overflow: visible; border: 1px solid #ead8e5; border-radius: 50%; background: radial-gradient(circle at 35% 26%, #fffafd, #f5e8f0 62%, #edf4eb); color: #875e82; }
+.luna-avatar-header { width: 45px; height: 45px; }
+.luna-avatar-header > svg { position: relative; z-index: 1; width: 27px; height: 27px; }
+.luna-avatar-glow { position: absolute; inset: 3px; border-radius: 50%; background: radial-gradient(circle, rgb(255 255 255 / 88%), transparent 70%); animation: luna-avatar-glow 3.8s ease-in-out infinite; }
+.luna-avatar-spark { position: absolute; z-index: 2; top: -4px; right: -2px; color: #b786a7; font-size: 12px; animation: luna-twinkle 2.8s ease-in-out infinite; }
+@keyframes luna-avatar-glow { 0%, 100% { opacity: 0.55; transform: scale(0.92); } 50% { opacity: 1; transform: scale(1.08); } }
+@keyframes luna-twinkle { 0%, 100% { opacity: 0.45; transform: rotate(0) scale(0.85); } 50% { opacity: 1; transform: rotate(20deg) scale(1.16); } }
+.luna-name-row { display: flex; align-items: center; gap: 8px; }
+.luna-name-row h2 { margin: 0; color: #4d3c4a; font-family: Georgia, 'Times New Roman', serif; font-size: 20px; font-weight: 500; letter-spacing: -0.015em; }
+.luna-chat-brand p { margin: 1px 0 0; color: #8b7e8a; font-size: 10px; }
+.luna-status-dot { width: 7px; height: 7px; border-radius: 50%; background: #b797aa; box-shadow: 0 0 0 3px #f4e9f0; }
+.luna-status-dot.is-ai { background: #6d9a75; box-shadow: 0 0 0 3px #e7f1e8; }
+.luna-clear-button { display: inline-flex; min-height: 34px; align-items: center; gap: 6px; padding: 0 9px; border: 1px solid transparent; border-radius: 9px; background: transparent; color: #988895; font-size: 10px; font-weight: 600; transition: background 150ms ease, color 150ms ease; }
+.luna-clear-button:hover { background: #f6edf3; color: #814c75; }
+.luna-clear-button svg { width: 13px; height: 13px; }
+.luna-inline-alert { margin: 10px 16px 0; border-radius: 10px; font-size: 10px; }
+.luna-message-list { display: flex; min-height: 245px; flex: 1; flex-direction: column; gap: 13px; overflow-y: auto; overscroll-behavior: contain; padding: 22px clamp(14px, 3vw, 28px) 16px; scrollbar-color: #dbcbd7 transparent; scrollbar-width: thin; }
+.luna-message { display: flex; max-width: min(88%, 680px); align-items: flex-end; gap: 8px; }
+.luna-message-user { align-self: flex-end; justify-content: flex-end; }
+.luna-message-assistant { align-self: flex-start; }
+.luna-message-avatar { display: grid; width: 25px; height: 25px; flex: 0 0 25px; place-items: center; margin-bottom: 3px; border: 1px solid #efe2ec; border-radius: 9px; background: #f8eff5; color: #94688d; }
+.luna-message-avatar svg { width: 16px; height: 16px; }
+.luna-bubble-wrap { display: grid; min-width: 0; gap: 3px; }
+.luna-message-user .luna-bubble-wrap { justify-items: end; }
+.luna-message-speaker { padding-left: 3px; color: #9c8297; font-size: 9px; font-weight: 700; letter-spacing: 0.035em; }
+.luna-bubble { max-width: 100%; margin: 0; padding: 11px 14px; border: 1px solid #eee5eb; border-radius: 4px 15px 15px 15px; background: linear-gradient(145deg, #fff, #fdf8fb); color: #554852; font-size: 12px; line-height: 1.72; white-space: pre-wrap; overflow-wrap: anywhere; }
+.luna-message-user .luna-bubble { border-color: #e8d7e4; border-radius: 15px 4px 15px 15px; background: linear-gradient(140deg, #794b73, #623b5e); color: #fffaff; }
+.luna-typing-bubble { display: inline-flex; min-width: 60px; align-items: center; gap: 5px; padding: 12px 14px; border: 1px solid #eee5eb; border-radius: 4px 15px 15px 15px; background: #fdf8fb; }
+.luna-typing-bubble span { width: 5px; height: 5px; border-radius: 50%; background: #b385a8; animation: luna-typing 1.05s ease-in-out infinite; }
+.luna-typing-bubble span:nth-child(2) { animation-delay: 0.15s; }
+.luna-typing-bubble span:nth-child(3) { animation-delay: 0.3s; }
+@keyframes luna-typing { 0%, 60%, 100% { opacity: 0.35; transform: translateY(0); } 30% { opacity: 1; transform: translateY(-4px); } }
+.luna-suggestions { padding: 0 clamp(14px, 3vw, 28px) 13px; }
+.luna-suggestions-label { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; color: #a1859a; font-size: 9px; font-weight: 700; letter-spacing: 0.06em; }
+.luna-suggestions-label svg { width: 12px; height: 12px; color: #c28eaf; }
+.luna-suggestion-list { display: flex; flex-wrap: wrap; gap: 7px; }
+.luna-suggestion { display: inline-flex; min-height: 34px; max-width: 100%; align-items: center; gap: 7px; padding: 6px 10px; border: 1px solid #ece2e9; border-radius: 999px; background: #fff; color: #766775; font-size: 10px; line-height: 1.4; text-align: left; transition: border-color 160ms ease, background 160ms ease, color 160ms ease; }
+.luna-suggestion:hover:not(:disabled) { border-color: #cbaac1; background: #fbf3f8; color: #704967; }
+.luna-suggestion svg { width: 11px; height: 11px; flex: 0 0 auto; transform: rotate(-45deg); }
+.luna-suggestion:disabled { cursor: not-allowed; opacity: 0.55; }
+.luna-composer { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) 43px; align-items: center; gap: 8px; margin: 0 16px; padding: 8px 9px 22px 12px; border: 1px solid #e7dce5; border-radius: 15px; background: #fff; box-shadow: 0 5px 18px rgb(85 54 77 / 5%); }
+.luna-composer:focus-within { border-color: #bc93b1; box-shadow: 0 0 0 3px rgb(164 114 153 / 11%); }
+.luna-composer textarea { width: 100%; min-height: 44px; max-height: 116px; resize: vertical; padding: 11px 3px; border: 0; outline: 0; background: transparent; color: #51444f; font-size: 12px; line-height: 1.5; }
+.luna-composer textarea::placeholder { color: #aa9eaa; }
+.luna-composer textarea:focus-visible { outline: 0; }
+.luna-compose-hint { position: absolute; bottom: 6px; left: 15px; color: #b2a6b1; font-size: 8px; }
+.luna-send-button { display: grid; width: 41px; height: 41px; place-items: center; border: 0; border-radius: 13px; background: linear-gradient(145deg, #8b5f83, #643e63); color: #fff; box-shadow: 0 5px 12px rgb(100 62 99 / 22%); transition: transform 150ms ease, opacity 150ms ease, box-shadow 150ms ease; }
+.luna-send-button:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 8px 16px rgb(100 62 99 / 28%); }
+.luna-send-button:disabled { cursor: not-allowed; opacity: 0.45; }
+.luna-send-button svg { width: 17px; height: 17px; }
+.luna-chat-footnote { display: flex; align-items: flex-start; gap: 6px; padding: 9px 19px 13px; color: #a196a1; font-size: 8px; line-height: 1.5; }
+.luna-chat-footnote svg { width: 11px; height: 11px; flex: 0 0 11px; margin-top: 1px; }
+.luna-consent-banner { display: grid; grid-template-columns: 40px minmax(0, 1fr) auto; align-items: center; gap: 11px; margin: 12px 16px 0; padding: 12px; border: 1px solid #eadde8; border-radius: 14px; background: linear-gradient(110deg, #fbf2f7, #fffdfa); }
+.luna-consent-banner .luna-consent-icon { width: 38px; height: 38px; margin: 0; border-radius: 12px; }
+.luna-consent-banner-copy { min-width: 0; }
+.luna-consent-banner-copy > strong { display: block; margin: 2px 0 2px; color: #614d5f; font-family: Georgia, 'Times New Roman', serif; font-size: 12px; font-weight: 600; }
+.luna-consent-banner-copy p { max-width: 650px; margin: 0; color: #877c88; font-size: 9px; line-height: 1.6; }
+.luna-consent-actions { display: grid; min-width: 138px; gap: 6px; }
+.luna-ai-enable, .luna-local-only { display: inline-flex; min-height: 32px; align-items: center; justify-content: center; gap: 5px; padding: 5px 9px; border: 1px solid #e5d7e3; border-radius: 9px; font-size: 9px; font-weight: 700; line-height: 1.35; text-align: center; }
+.luna-ai-enable { border-color: #795275; background: #795275; color: white; }
+.luna-ai-enable:hover { background: #684365; }
+.luna-ai-enable svg { width: 12px; height: 12px; flex: 0 0 auto; }
+.luna-local-only { background: white; color: #796879; font-weight: 600; }
+.luna-local-only:hover { border-color: #c9abc1; background: #fcf6fa; }
+.luna-consent-gate { display: flex; flex: 1; flex-direction: column; align-items: center; justify-content: center; padding: clamp(25px, 4vw, 48px); text-align: center; }
+.luna-consent-icon { display: grid; width: 54px; height: 54px; place-items: center; margin-bottom: 15px; border: 1px solid #e9dce8; border-radius: 18px; background: linear-gradient(145deg, #fbf0f7, #f0f5ed); color: #805c7c; }
+.luna-consent-icon svg { width: 22px; height: 22px; }
+.luna-consent-gate h3 { max-width: 480px; margin: 6px 0 9px; color: #53414f; font-family: Georgia, 'Times New Roman', serif; font-size: clamp(21px, 3vw, 28px); font-weight: 500; line-height: 1.25; word-spacing: 0.12em; }
+.luna-consent-gate p { max-width: 550px; margin: 0 0 22px; color: #817580; font-size: 11px; line-height: 1.8; text-align: left; }
+.luna-consent-button.MuiButton-root { min-height: 45px; gap: 8px; padding: 0 16px; border-radius: 12px; background: linear-gradient(135deg, #85547a, #60375e); font-size: 10px; font-weight: 700; text-transform: none; }
+.luna-consent-button.MuiButton-root:hover { background: linear-gradient(135deg, #966489, #70466c); }
+.luna-consent-button svg { width: 14px; height: 14px; }
+.luna-side-column { display: grid; align-content: start; gap: 12px; }
+.luna-context-card { position: relative; overflow: hidden; padding: 20px; border: 1px solid #e8e0e8; border-radius: 19px; background: linear-gradient(150deg, #fffdfc 2%, #faf4f8 67%, #f1f5ee 100%); box-shadow: var(--shadow-card); }
+.luna-context-flower { position: absolute; top: 11px; right: 13px; display: grid; width: 34px; height: 34px; place-items: center; border: 1px solid rgb(190 152 182 / 19%); border-radius: 12px; background: rgb(255 255 255 / 68%); color: #9a6f91; font-size: 19px; }
+.luna-context-card h3 { max-width: 190px; margin: 5px 0 7px; color: #594655; font-family: Georgia, 'Times New Roman', serif; font-size: 20px; font-weight: 500; line-height: 1.25; word-spacing: 0.12em; }
+.luna-context-copy { margin: 0; color: #8b7f89; font-size: 9px; line-height: 1.7; }
+.luna-context-count { display: flex; align-items: baseline; gap: 7px; margin: 22px 0 14px; }
+.luna-context-count strong { color: #754e70; font-family: Georgia, 'Times New Roman', serif; font-size: 36px; font-weight: 500; line-height: 1; }
+.luna-context-count span { color: #91828f; font-size: 10px; }
+.luna-context-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.luna-context-stats > div { display: grid; gap: 3px; padding: 10px; border: 1px solid rgb(235 225 234 / 80%); border-radius: 11px; background: rgb(255 255 255 / 65%); }
+.luna-context-stats span { color: #968995; font-size: 8px; }
+.luna-context-stats strong { color: #5e4b5d; font-size: 12px; font-weight: 700; }
+.luna-phase-chip { display: flex; align-items: center; justify-content: space-between; gap: 6px; margin-top: 9px; padding: 9px 10px; border: 1px solid #e8e1e8; border-radius: 10px; background: rgb(255 255 255 / 62%); }
+.luna-phase-chip span { color: #958896; font-size: 8px; }
+.luna-phase-chip strong { color: #76526f; font-size: 9px; text-transform: capitalize; }
+.luna-context-footer { margin: 13px 0 0; color: #9a8e98; font-size: 8px; line-height: 1.55; }
+.luna-context-empty { display: grid; justify-items: center; gap: 5px; margin-top: 17px; padding: 14px 9px; border: 1px dashed #e3d6e1; border-radius: 12px; background: rgb(255 255 255 / 48%); text-align: center; }
+.luna-context-empty > span { color: #b386a6; font-size: 22px; }
+.luna-context-empty p { margin: 0; color: #918691; font-size: 9px; line-height: 1.65; }
+.luna-context-skeleton { display: grid; gap: 4px; margin-top: 17px; }
+.luna-privacy-card { display: flex; align-items: flex-start; gap: 10px; padding: 13px; border: 1px solid #e4ebe3; border-radius: 14px; background: linear-gradient(120deg, #f2f7f1, #fffdfb); }
+.luna-privacy-icon { display: grid; width: 29px; height: 29px; flex: 0 0 29px; place-items: center; border-radius: 10px; background: #e5efe5; color: #638168; }
+.luna-privacy-icon svg { width: 14px; height: 14px; }
+.luna-privacy-card strong { display: block; margin: 1px 0 3px; color: #536255; font-size: 9px; font-weight: 700; }
+.luna-privacy-card p { margin: 0; color: #7c887e; font-size: 8px; line-height: 1.6; }
+.luna-revoke-consent { flex: 0 0 auto; min-height: 27px; padding: 0 7px; border: 1px solid #d9e4d7; border-radius: 8px; background: #fff; color: #718174; font-size: 8px; font-weight: 650; }
+.luna-revoke-consent:hover { border-color: #c7d9c4; background: #f5faf3; }
+.luna-privacy-status { flex: 0 0 auto; padding: 4px 7px; border-radius: 99px; background: #e5f0e5; color: #638168; font-size: 7px; font-weight: 700; white-space: nowrap; }
+.luna-home-invitation { display: flex; align-items: center; gap: 13px; padding: 14px 17px; border: 1px solid #e8dce7; border-radius: 16px; background: linear-gradient(110deg, #fcf4f8, #fffdfb 58%, #f2f7f1); box-shadow: 0 5px 17px rgb(74 45 68 / 4%); }
+.luna-home-invitation-icon { position: relative; display: grid; width: 42px; height: 42px; flex: 0 0 42px; place-items: center; border-radius: 14px; background: linear-gradient(145deg, #f5e4ef, #e9f1e9); color: #865c7d; font-size: 24px; }
+.luna-home-invitation-icon i { position: absolute; top: -4px; right: -2px; color: #bd89aa; font-size: 12px; font-style: normal; animation: luna-twinkle 2.8s ease-in-out infinite; }
+.luna-home-invitation-copy { display: grid; min-width: 0; flex: 1; gap: 1px; }
+.luna-home-invitation-copy > span { color: #a08098; font-size: 8px; font-weight: 750; letter-spacing: 0.12em; }
+.luna-home-invitation-copy strong { color: #594354; font-family: Georgia, 'Times New Roman', serif; font-size: 16px; font-weight: 500; }
+.luna-home-invitation-copy p { margin: 1px 0 0; color: #8a7e89; font-size: 9px; line-height: 1.55; }
+.luna-home-invitation-button { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 7px; min-height: 38px; padding: 0 12px; border: 1px solid #e6d5e2; border-radius: 11px; background: #fff; color: #734b6c; font-size: 9px; font-weight: 700; transition: transform 150ms ease, border-color 150ms ease, background 150ms ease; }
+.luna-home-invitation-button:hover { transform: translateY(-2px); border-color: #c7a5bd; background: #fbf4f8; }
+.luna-home-invitation-button svg { width: 13px; height: 13px; }
+.visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; clip-path: inset(50%); }
+
+html[data-theme='dark'] .luna-chat-card,
+html[data-theme='dark'] .luna-context-card { border-color: var(--line); background: var(--surface); }
+html[data-theme='dark'] .luna-consent-banner { border-color: var(--line); background: #382f39; }
+html[data-theme='dark'] .luna-consent-banner-copy > strong { color: #f0e5ef; }
+html[data-theme='dark'] .luna-consent-banner-copy p { color: #c5b7c5; }
+html[data-theme='dark'] .luna-local-only,
+html[data-theme='dark'] .luna-revoke-consent { border-color: var(--line); background: #332d35; color: #e6dce6; }
+html[data-theme='dark'] .luna-chat-header { border-color: var(--line); background: #312a33; }
+html[data-theme='dark'] .luna-name-row h2,
+html[data-theme='dark'] .luna-context-card h3 { color: #f0e5ef; }
+html[data-theme='dark'] .luna-bubble { border-color: #514452; background: #342d36; color: #eee4ed; }
+html[data-theme='dark'] .luna-message-user .luna-bubble { border-color: #805e7c; background: linear-gradient(140deg, #895e83, #623b5e); color: #fffaff; }
+html[data-theme='dark'] .luna-composer,
+html[data-theme='dark'] .luna-suggestion,
+html[data-theme='dark'] .luna-context-stats > div,
+html[data-theme='dark'] .luna-phase-chip { border-color: var(--line); background: #332d35; color: #e6dce6; }
+html[data-theme='dark'] .luna-composer textarea { color: #f0e9ef; }
+html[data-theme='dark'] .luna-home-invitation { border-color: var(--line); background: linear-gradient(110deg, #382e39, #302a32 58%, #2c352d); }
+html[data-theme='dark'] .luna-home-invitation-copy strong { color: #f0e5ef; }
+@media (prefers-color-scheme: dark) {
+  html[data-theme='system'] .luna-chat-card,
+  html[data-theme='system'] .luna-context-card { border-color: var(--line); background: var(--surface); }
+  html[data-theme='system'] .luna-consent-banner { border-color: var(--line); background: #382f39; }
+  html[data-theme='system'] .luna-consent-banner-copy > strong { color: #f0e5ef; }
+  html[data-theme='system'] .luna-consent-banner-copy p { color: #c5b7c5; }
+  html[data-theme='system'] .luna-local-only,
+  html[data-theme='system'] .luna-revoke-consent { border-color: var(--line); background: #332d35; color: #e6dce6; }
+  html[data-theme='system'] .luna-chat-header { border-color: var(--line); background: #312a33; }
+  html[data-theme='system'] .luna-name-row h2,
+  html[data-theme='system'] .luna-context-card h3 { color: #f0e5ef; }
+  html[data-theme='system'] .luna-bubble { border-color: #514452; background: #342d36; color: #eee4ed; }
+  html[data-theme='system'] .luna-message-user .luna-bubble { border-color: #805e7c; background: linear-gradient(140deg, #895e83, #623b5e); color: #fffaff; }
+  html[data-theme='system'] .luna-composer,
+  html[data-theme='system'] .luna-suggestion,
+  html[data-theme='system'] .luna-context-stats > div,
+  html[data-theme='system'] .luna-phase-chip { border-color: var(--line); background: #332d35; color: #e6dce6; }
+  html[data-theme='system'] .luna-composer textarea { color: #f0e9ef; }
+  html[data-theme='system'] .luna-home-invitation { border-color: var(--line); background: linear-gradient(110deg, #382e39, #302a32 58%, #2c352d); }
+  html[data-theme='system'] .luna-home-invitation-copy strong { color: #f0e5ef; }
+}
+
+@media (max-width: 1120px) {
+  .app-sparkle-field { left: 238px; }
+}
+@media (max-width: 1000px) {
+  .luna-layout { grid-template-columns: minmax(0, 1fr); }
+  .luna-side-column { grid-template-columns: minmax(0, 1fr) minmax(210px, 0.65fr); align-items: stretch; }
+  .luna-context-card { display: grid; grid-template-columns: minmax(0, 1fr) 180px; column-gap: 14px; }
+  .luna-context-card > .eyebrow-label,
+  .luna-context-card > h3,
+  .luna-context-card > .luna-context-copy { grid-column: 1; }
+  .luna-context-count,
+  .luna-context-stats,
+  .luna-phase-chip,
+  .luna-context-footer,
+  .luna-context-empty,
+  .luna-context-skeleton { grid-column: 2; }
+  .luna-context-count { grid-row: 1 / span 2; align-self: end; margin: 0 0 8px; }
+  .luna-context-stats { grid-row: 3 / span 2; }
+  .luna-phase-chip { grid-row: 5; }
+  .luna-context-footer { grid-row: 6; }
+  .luna-context-empty,
+  .luna-context-skeleton { grid-row: 1 / span 3; align-self: center; }
+  .luna-privacy-card { align-items: center; }
+}
+@media (max-width: 680px) {
+  .app-sparkle-field { top: 116px; right: 6px; bottom: 84px; left: 7px; }
+  .app-sparkle-field span:nth-child(1) { right: 4%; }
+  .app-sparkle-field span:nth-child(2) { right: 1%; }
+  .luna-page { width: 100%; }
+  .luna-layout { gap: 11px; }
+  .luna-chat-card { height: auto; min-height: min(690px, calc(100svh - 250px)); border-radius: 18px; }
+  .luna-chat-header { min-height: 66px; padding: 11px 13px; }
+  .luna-avatar-header { width: 40px; height: 40px; }
+  .luna-message-list { min-height: 240px; max-height: 48svh; gap: 11px; padding: 17px 12px 12px; }
+  .luna-message { max-width: 94%; gap: 6px; }
+  .luna-bubble { padding: 10px 12px; font-size: 11px; line-height: 1.7; }
+  .luna-suggestions { padding: 0 12px 11px; }
+  .luna-suggestion-list { gap: 6px; }
+  .luna-suggestion { min-height: 32px; padding: 6px 9px; font-size: 9px; }
+  .luna-composer { margin: 0 10px; padding-left: 10px; }
+  .luna-composer textarea { font-size: 16px; }
+  .luna-compose-hint { font-size: 7px; }
+  .luna-chat-footnote { padding: 8px 13px 11px; font-size: 8px; }
+  .luna-consent-banner { grid-template-columns: 35px minmax(0, 1fr); gap: 8px; margin: 9px 10px 0; padding: 10px; }
+  .luna-consent-banner .luna-consent-icon { width: 34px; height: 34px; }
+  .luna-consent-banner-copy > strong { font-size: 11px; }
+  .luna-consent-banner-copy p { font-size: 8px; }
+  .luna-consent-actions { grid-column: 1 / -1; grid-template-columns: 1fr 1fr; min-width: 0; }
+  .luna-ai-enable, .luna-local-only { min-height: 35px; font-size: 8px; }
+  .luna-privacy-card { flex-wrap: wrap; align-items: flex-start; }
+  .luna-privacy-card > div { min-width: 0; flex: 1; }
+  .luna-revoke-consent, .luna-privacy-status { margin-left: 39px; }
+  .luna-side-column { grid-template-columns: 1fr; }
+  .luna-context-card { display: block; padding: 16px; }
+  .luna-context-count { margin: 18px 0 12px; }
+  .luna-context-stats,
+  .luna-phase-chip,
+  .luna-context-footer,
+  .luna-context-empty,
+  .luna-context-skeleton { grid-column: auto; }
+  .luna-home-invitation { flex-wrap: wrap; gap: 10px; padding: 12px; }
+  .luna-home-invitation-icon { width: 37px; height: 37px; flex-basis: 37px; }
+  .luna-home-invitation-copy strong { font-size: 14px; }
+  .luna-home-invitation-copy p { max-width: 270px; }
+  .luna-home-invitation-button { width: 100%; justify-content: center; }
+}
+@media (max-width: 420px) {
+  .app-mobile-nav { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+  .app-mobile-nav-link { gap: 2px; font-size: 7px; }
+  .luna-message-list { max-height: 45svh; }
+  .luna-clear-button { padding: 0 7px; }
+  .luna-clear-button span { display: none; }
+  .luna-consent-gate { padding: 24px 18px; }
+  .luna-consent-gate p { font-size: 10px; }
+}
+
+html[data-font-size='small'] .luna-bubble { font-size: 11px; }
+html[data-font-size='small'] .luna-context-copy,
+html[data-font-size='small'] .luna-context-footer,
+html[data-font-size='small'] .luna-privacy-card p { font-size: 8px; }
+html[data-font-size='large'] .luna-name-row h2 { font-size: 23px; }
+html[data-font-size='large'] .luna-chat-brand p { font-size: 12px; }
+html[data-font-size='large'] .luna-bubble { font-size: 14px; line-height: 1.75; }
+html[data-font-size='large'] .luna-message-speaker { font-size: 11px; }
+html[data-font-size='large'] .luna-suggestions-label,
+html[data-font-size='large'] .luna-suggestion { font-size: 12px; }
+html[data-font-size='large'] .luna-composer textarea { font-size: 18px; }
+html[data-font-size='large'] .luna-compose-hint { font-size: 9px; }
+html[data-font-size='large'] .luna-chat-footnote,
+html[data-font-size='large'] .luna-context-copy,
+html[data-font-size='large'] .luna-context-footer,
+html[data-font-size='large'] .luna-context-empty p,
+html[data-font-size='large'] .luna-privacy-card p { font-size: 10px; }
+html[data-font-size='large'] .luna-context-card h3 { font-size: 22px; }
+html[data-font-size='large'] .luna-context-stats span { font-size: 9px; }
+html[data-font-size='large'] .luna-context-stats strong { font-size: 14px; }
+html[data-font-size='large'] .luna-consent-banner-copy p { font-size: 10px; }
+html[data-font-size='large'] .luna-home-invitation-copy strong { font-size: 18px; }
+html[data-font-size='large'] .luna-home-invitation-copy p { font-size: 11px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .app-sparkle-field span,
+  .luna-avatar-glow,
+  .luna-avatar-spark,
+  .luna-home-invitation-icon i,
+  .luna-typing-bubble span { animation: none !important; }
+}

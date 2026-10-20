@@ -1,201 +1,164 @@
-import React, { useState } from 'react'
-import { useTranslation } from 'react-i18next'
+import React, { useEffect, useState } from 'react'
+import { Alert, Button } from '@mui/material'
+import { motion } from 'framer-motion'
+import { FiCheck, FiLogOut, FiMoon, FiSun, FiType } from 'react-icons/fi'
 import { useNavigate } from 'react-router-dom'
-import { LuDownload, LuTrash2, LuShieldCheck, LuBellRing } from 'react-icons/lu'
+import { useTranslation } from 'react-i18next'
 
-import AuthPanel from '../components/AuthPanel'
-import { SaveButton, Slider, Switch } from '../components/Controls'
-import { celebrate } from '../lib/celebrate'
-import { normalizeCycleLength, normalizePeriodLength, toDateKey } from '../lib/cycle'
-import { DEFAULT_PREFS, getProfile, savePrefs, saveProfile, setMotion } from '../lib/repo'
-import { KEYS, writeRaw, readRaw, useRaw, useStoredJson } from '../lib/store'
-import { useSession } from '../lib/session'
-import { pushProfile } from '../lib/sync'
+import { supabase } from '../lib/supabase'
 
-const EMPTY = Object.freeze({})
-const SIZES = ['small', 'medium', 'large']
-const TONES = ['playful', 'balanced', 'serious']
+const STORAGE_KEY = 'hercycle.preferences'
+const defaults = { theme: 'light', fontSize: 'medium', hideIntimacy: false }
 
-const exportData = () => {
-  const payload = {
-    exportedAt: new Date().toISOString(),
-    note: 'Your HerCycle data. Keep this file private.',
-    profile: JSON.parse(readRaw(KEYS.profile) || 'null'),
-    checkins: JSON.parse(readRaw(KEYS.checkins) || '{}'),
-    intimacy: JSON.parse(readRaw(KEYS.intimacy) || '{}'),
-    journey: JSON.parse(readRaw(KEYS.journey) || 'null'),
-    preferences: JSON.parse(readRaw(KEYS.prefs) || 'null'),
+const readSavedPreferences = () => {
+  try {
+    return { ...defaults, ...JSON.parse(window.localStorage.getItem(STORAGE_KEY) || '{}') }
+  } catch {
+    return defaults
   }
-  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' })
-  const url = URL.createObjectURL(blob)
-  const link = document.createElement('a')
-  link.href = url
-  link.download = `hercycle-export-${toDateKey(new Date())}.json`
-  document.body.appendChild(link)
-  link.click()
-  link.remove()
-  window.setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
 
-/** Settings. Every control is wired: toggles apply at once, and cycle details are saved with the button. */
-const Settings = () => {
+const Settings = ({ session }) => {
   const { t } = useTranslation()
   const navigate = useNavigate()
-  const { session, sync } = useSession()
-  const stored = useStoredJson(KEYS.profile, EMPTY)
-  const profile = { ...getProfile(), ...stored }
-  const prefs = { ...DEFAULT_PREFS, ...useStoredJson(KEYS.prefs, EMPTY) }
-  const motionOn = useRaw(KEYS.motion) !== 'off'
-  const [confirmDelete, setConfirmDelete] = useState(false)
+  const [preferences, setPreferences] = useState(readSavedPreferences)
+  const [saveState, setSaveState] = useState('idle')
+  const [error, setError] = useState('')
 
-  const [lastPeriodStart, setLastPeriodStart] = useState(profile.lastPeriodStart || '')
-  const [cycleLength, setCycleLength] = useState(normalizeCycleLength(profile.cycleLength))
-  const [periodLength, setPeriodLength] = useState(normalizePeriodLength(profile.periodLength))
-  const [tone, setTone] = useState(profile.tone || 'balanced')
-  const [fontSize, setFontSize] = useState(profile.fontSize || 'medium')
+  useEffect(() => {
+    if (!session?.user?.id) return undefined
+    let isMounted = true
 
-  const today = toDateKey(new Date())
-  const dateInvalid = lastPeriodStart > today
+    const loadPreferences = async () => {
+      const { data, error: queryError } = await supabase
+        .from('user_settings')
+        .select('theme_preference, font_size, hide_intimacy')
+        .eq('user_id', session.user.id)
+        .maybeSingle()
+      if (queryError || !isMounted || !data) return
+
+      const next = {
+        theme: data.theme_preference || defaults.theme,
+        fontSize: data.font_size || defaults.fontSize,
+        hideIntimacy: data.hide_intimacy ?? defaults.hideIntimacy,
+      }
+      setPreferences(next)
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next))
+    }
+
+    loadPreferences().catch((queryError) => console.error('Unable to load preferences:', queryError))
+    return () => { isMounted = false }
+  }, [session?.user?.id])
+
+  useEffect(() => {
+    const root = document.documentElement
+    if (preferences.theme === 'system') root.setAttribute('data-theme', 'system')
+    else if (preferences.theme === 'dark') root.setAttribute('data-theme', 'dark')
+    else root.removeAttribute('data-theme')
+
+    root.setAttribute('data-font-size', preferences.fontSize)
+    window.dispatchEvent(new CustomEvent('hercycle:preferences-changed', { detail: preferences }))
+  }, [preferences])
+
+  const updatePreference = (key, value) => {
+    setSaveState('idle')
+    setPreferences((current) => ({ ...current, [key]: value }))
+  }
 
   const savePreferences = async () => {
-    if (dateInvalid) throw new Error(t('settings.dateFuture'))
-    const next = saveProfile({
-      lastPeriodStart: lastPeriodStart || null,
-      cycleLength,
-      periodLength,
-      tone,
-      fontSize,
-    })
+    setError('')
+    setSaveState('saving')
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(preferences))
+    window.dispatchEvent(new CustomEvent('hercycle:preferences-changed', { detail: preferences }))
+
     if (session?.user?.id) {
       try {
-        await pushProfile(session.user.id, next)
-      } catch (failure) {
-        throw new Error(t('settings.syncFailed', { message: failure.message }))
+        const { error: saveError } = await supabase.from('user_settings').upsert({
+          user_id: session.user.id,
+          theme_preference: preferences.theme,
+          font_size: preferences.fontSize,
+          hide_intimacy: preferences.hideIntimacy,
+          updated_at: new Date().toISOString(),
+        }, { onConflict: 'user_id' })
+        if (saveError) throw saveError
+      } catch (saveError) {
+        console.error('Unable to save preferences:', saveError)
+        setError(saveError.message || t('errorGeneric'))
+        setSaveState('idle')
+        return
       }
     }
-    celebrate('burst', { x: window.innerWidth / 2, y: window.innerHeight / 3, pattern: 'sparkle', count: 14 })
+
+    setSaveState('saved')
   }
 
-  const setMotionSwitch = (on) => {
-    setMotion(on)
-    // Confirm the change when the user turns motion back on.
-    if (on) celebrate('burst', { x: window.innerWidth / 2, y: window.innerHeight / 3, pattern: 'sparkle', count: 14 })
+  const signOut = async () => {
+    const { error: signOutError } = await supabase.auth.signOut()
+    if (signOutError) {
+      setError(signOutError.message || t('errorGeneric'))
+      return
+    }
+    navigate('/auth')
   }
-
-  const deleteEverything = () => {
-    ;[KEYS.profile, KEYS.checkins, KEYS.intimacy, KEYS.journey, KEYS.prefs].forEach((key) => writeRaw(key, null))
-    navigate('/onboarding', { replace: true })
-  }
-
-  const syncNote =
-    sync.status === 'syncing'
-      ? t('settings.syncing')
-      : sync.status === 'done'
-        ? t('settings.syncDone', { imported: (sync.importedCheckins || 0) + (sync.importedIntimacy || 0) })
-        : sync.status === 'error'
-          ? t('settings.syncFailed', { message: sync.message })
-          : ''
 
   return (
-    <div className="section-gap">
-      <header>
-        <p className="card-kicker">{t('settings.kicker')}</p>
-        <h1 className="hero-title" style={{ fontSize: 'clamp(1.9rem, 5vw, 2.5rem)', marginTop: 6 }}>{t('settings.title')}</h1>
-        <p className="muted" style={{ marginTop: 6 }}>{t('settings.intro')}</p>
-      </header>
-
-      <section className="card stack" aria-labelledby="account-title">
-        <h2 id="account-title" style={{ fontSize: '1.2rem' }}>{t('settings.accountTitle')}</h2>
-        <AuthPanel session={session} />
-        {syncNote && (
-          <div className={`notice ${sync.status === 'error' ? 'warn' : 'info'}`} role="status">
-            {syncNote}
-          </div>
-        )}
-        {!session?.user && <p className="muted" style={{ fontSize: '0.9rem' }}>{t('settings.guestNote')}</p>}
+    <div className="settings-page">
+      <section className="settings-intro">
+        <span className="eyebrow-label">MAKE THIS SPACE YOURS</span>
+        <h2>Small comforts, your way.</h2>
+        <p>Choose what feels easier to see and use. Your preferences are private.</p>
       </section>
 
-      <section className="card stack" aria-labelledby="cycle-title">
-        <h2 id="cycle-title" style={{ fontSize: '1.2rem' }}>{t('settings.cycleTitle')}</h2>
-        <label className="field">
-          <span>{t('onboarding.lastPeriod')}</span>
-          <input className="input" type="date" max={today} value={lastPeriodStart} onChange={(event) => setLastPeriodStart(event.target.value)} aria-invalid={dateInvalid} />
-          <small className={dateInvalid ? 'field-error' : ''}>{dateInvalid ? t('settings.dateFuture') : t('settings.dateHelp')}</small>
-        </label>
-        <Slider id="set-cycle" label={t('onboarding.cycleLength')} value={cycleLength} min={21} max={40} unit={t('units.days')} onChange={setCycleLength} tint="var(--berry)" lowLabel="21" highLabel="40" pattern="sparkle" />
-        <Slider id="set-period" label={t('onboarding.periodLength')} value={periodLength} min={2} max={10} unit={t('units.days')} onChange={setPeriodLength} tint="#c15b70" lowLabel="2" highLabel="10" pattern="drop" />
-
-        <div className="stack" style={{ gap: 8 }}>
-          <span className="field-label" style={{ fontWeight: 600, color: 'var(--ink-soft)' }}>{t('settings.toneLabel')}</span>
-          <div className="seg" role="group" aria-label={t('settings.toneLabel')}>
-            {TONES.map((item) => (
-              <button key={item} type="button" aria-pressed={tone === item} onClick={() => setTone(item)}>{t(`tones.${item}.title`)}</button>
-            ))}
-          </div>
-        </div>
-
-        <div className="stack" style={{ gap: 8 }}>
-          <span className="field-label" style={{ fontWeight: 600, color: 'var(--ink-soft)' }}>{t('settings.fontLabel')}</span>
-          <div className="seg" role="group" aria-label={t('settings.fontLabel')}>
-            {SIZES.map((item) => (
-              <button key={item} type="button" aria-pressed={fontSize === item} onClick={() => setFontSize(item)}>{t(`settings.font.${item}`)}</button>
-            ))}
-          </div>
-        </div>
-
-        <SaveButton
-          onSave={savePreferences}
-          idleLabel={t('settings.savePreferences')}
-          savingLabel={t('settings.saving')}
-          savedLabel={t('settings.saved')}
-          savedText={session?.user ? t('settings.savedAccount') : t('settings.savedDevice')}
-          statusText={session?.user ? '' : t('settings.deviceHint')}
-          disabled={dateInvalid}
-        />
-      </section>
-
-      <section className="card stack" aria-labelledby="experience-title">
-        <h2 id="experience-title" style={{ fontSize: '1.2rem' }}>{t('settings.experienceTitle')}</h2>
-        <Switch id="motion" checked={motionOn} onChange={setMotionSwitch} label={t('settings.motion')} hint={t('settings.motionHint')} />
-        <Switch id="reminders" checked={prefs.reminders} onChange={(value) => savePrefs({ reminders: value })} label={t('settings.reminders')} hint={t('settings.remindersHint')} />
-        <div className="notice info" role="note" style={{ alignItems: 'center' }}>
-          <LuBellRing aria-hidden="true" style={{ flex: 'none' }} />
-          <span>{t('settings.notificationsNote')}</span>
-        </div>
-      </section>
-
-      <section className="card stack" aria-labelledby="journey-settings-title">
-        <h2 id="journey-settings-title" style={{ fontSize: '1.2rem' }}>{t('settings.journeyTitle')}</h2>
-        <Switch id="gamification" checked={prefs.gamification} onChange={(value) => savePrefs({ gamification: value })} label={t('settings.gamification')} hint={t('settings.gamificationHint')} />
-        <Switch id="show-rewards" checked={prefs.showRewards} onChange={(value) => savePrefs({ showRewards: value })} label={t('settings.showRewards')} hint={t('settings.showRewardsHint')} />
-        <Switch id="celebrate" checked={prefs.celebrate} onChange={(value) => savePrefs({ celebrate: value })} label={t('settings.celebrate')} hint={t('settings.celebrateHint')} />
-      </section>
-
-      <section className="card stack" aria-labelledby="privacy-title">
-        <h2 id="privacy-title" style={{ fontSize: '1.2rem' }}>
-          <LuShieldCheck aria-hidden="true" style={{ verticalAlign: '-3px', marginRight: 8 }} />
-          {t('settings.privacyTitle')}
-        </h2>
-        <Switch id="hide-intimacy" checked={prefs.hideIntimacy} onChange={(value) => savePrefs({ hideIntimacy: value })} label={t('settings.hideIntimacy')} hint={t('settings.hideIntimacyHint')} />
-        <div className="row">
-          <button type="button" className="btn ghost" onClick={exportData}>
-            <LuDownload aria-hidden="true" /> {t('settings.export')}
-          </button>
-          {!confirmDelete ? (
-            <button type="button" className="btn ghost" onClick={() => setConfirmDelete(true)}>
-              <LuTrash2 aria-hidden="true" /> {t('settings.delete')}
+      <section className="settings-card">
+        <div className="settings-section-heading"><span className="settings-section-icon"><FiSun aria-hidden="true" /></span><div><h3>{t('appearance')}</h3><p>Set the mood for your space.</p></div></div>
+        <div className="settings-option-grid" role="radiogroup" aria-label={t('appearance')}>
+          {[
+            { key: 'light', label: t('lightMode'), icon: FiSun },
+            { key: 'dark', label: t('darkMode'), icon: FiMoon },
+            { key: 'system', label: 'System', icon: FiType },
+          ].map(({ key, label, icon: Icon }) => (
+            <button key={key} type="button" role="radio" aria-checked={preferences.theme === key} className={`settings-choice${preferences.theme === key ? ' is-selected' : ''}`} onClick={() => updatePreference('theme', key)}>
+              <Icon aria-hidden="true" /><span>{label}</span>{preferences.theme === key && <FiCheck className="settings-choice-check" aria-hidden="true" />}
             </button>
-          ) : (
-            <>
-              <button type="button" className="btn danger" onClick={deleteEverything}>{t('settings.deleteConfirm')}</button>
-              <button type="button" className="btn quiet" onClick={() => setConfirmDelete(false)}>{t('settings.cancel')}</button>
-            </>
-          )}
+          ))}
         </div>
-        <p className="muted" style={{ fontSize: '0.88rem' }}>{t('settings.privacyBody')}</p>
       </section>
 
-      <p className="muted center" style={{ fontSize: '0.84rem' }}>{t('settings.version')}</p>
+      <section className="settings-card">
+        <div className="settings-section-heading"><span className="settings-section-icon settings-section-icon-lilac"><FiType aria-hidden="true" /></span><div><h3>{t('fontSize')}</h3><p>Comfortable reading is part of good care.</p></div></div>
+        <div className="settings-option-grid settings-option-grid-three" role="radiogroup" aria-label={t('fontSize')}>
+          {[
+            { key: 'small', label: t('smallText'), sample: 'Aa' },
+            { key: 'medium', label: t('mediumText'), sample: 'Aa' },
+            { key: 'large', label: t('largeText'), sample: 'Aa' },
+          ].map(({ key, label, sample }) => (
+            <button key={key} type="button" role="radio" aria-checked={preferences.fontSize === key} className={`settings-choice settings-text-choice settings-text-${key}${preferences.fontSize === key ? ' is-selected' : ''}`} onClick={() => updatePreference('fontSize', key)}>
+              <strong>{sample}</strong><span>{label}</span>{preferences.fontSize === key && <FiCheck className="settings-choice-check" aria-hidden="true" />}
+            </button>
+          ))}
+        </div>
+      </section>
+
+      <motion.section className="settings-card settings-privacy-card" whileHover={{ y: -2 }}>
+        <div className="settings-toggle-copy"><span className="settings-section-icon settings-section-icon-rose">♡</span><div><h3>{t('privacy')}</h3><p>{t('hideIntimacySection')}</p><small>Your private reflections stay saved; this only hides the Intimacy tab.</small></div></div>
+        <button type="button" className={`settings-switch${preferences.hideIntimacy ? ' is-on' : ''}`} role="switch" aria-checked={preferences.hideIntimacy} aria-label={t('hideIntimacySection')} onClick={() => updatePreference('hideIntimacy', !preferences.hideIntimacy)}><span /></button>
+      </motion.section>
+
+      <section className="settings-about-card">
+        <div><span className="eyebrow-label">MADE WITH CARE</span><h3>{t('about')}</h3><p>{t('appVersion', { version: '1.1.0' })}</p></div>
+        <span className="settings-about-flower" aria-hidden="true">✿</span>
+      </section>
+
+      {!session && <p className="settings-local-note">You are using a private local space. Sign in to sync these preferences between devices.</p>}
+      {error && <Alert severity="error">{error}</Alert>}
+      <Button variant="contained" onClick={savePreferences} disabled={saveState === 'saving'} className="form-submit-button settings-save-button">
+        {saveState === 'saving' ? 'Saving preferences…' : saveState === 'saved' ? t('preferencesSaved') : t('saveChanges')}
+      </Button>
+      {session && (
+        <button type="button" className="settings-signout-button" onClick={signOut}>
+          <FiLogOut aria-hidden="true" /> Sign out of this device
+        </button>
+      )}
     </div>
   )
 }

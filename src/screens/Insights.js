@@ -1,161 +1,154 @@
 import React, { useEffect, useMemo, useState } from 'react'
+import { Alert, Skeleton } from '@mui/material'
+import { motion } from 'framer-motion'
+import { FiActivity, FiHeart, FiInfo, FiSun } from 'react-icons/fi'
 import { useTranslation } from 'react-i18next'
-import { subDays, format, parseISO } from 'date-fns'
 
-import { celebrate } from '../lib/celebrate'
-import { eligibleMilestones } from '../lib/journey'
-import { toDateKey } from '../lib/cycle'
-import { awardMilestone, DEFAULT_JOURNEY, getPrefs } from '../lib/repo'
-import { KEYS, useStoredJson } from '../lib/store'
+import { supabase } from '../lib/supabase'
 
-const RANGES = [7, 30, 90, 'all']
-const EMPTY = Object.freeze({})
-
-const average = (values) => (values.length ? Math.round((values.reduce((sum, value) => sum + value, 0) / values.length) * 10) / 10 : null)
-
-/** Line chart of mood and energy across the selected range. Drawn in SVG, no chart library. */
-function TrendChart({ points, labels, ariaLabel }) {
-  const width = 640
-  const height = 220
-  const pad = 28
-  const toX = (index) => pad + (points.length <= 1 ? (width - pad * 2) / 2 : (index / (points.length - 1)) * (width - pad * 2))
-  const toY = (value) => pad + ((10 - value) / 9) * (height - pad * 2)
-  const line = (key) => {
-    const valid = points.map((point, index) => ({ x: toX(index), y: point[key] == null ? null : toY(point[key]) }))
-    let path = ''
-    let pen = false
-    for (const item of valid) {
-      if (item.y == null) {
-        pen = false
-        continue
-      }
-      path += `${pen ? 'L' : 'M'}${item.x.toFixed(1)} ${item.y.toFixed(1)} `
-      pen = true
-    }
-    return { path: path.trim(), dots: valid.filter((item) => item.y != null) }
-  }
-  const mood = line('mood')
-  const energy = line('energy')
-
-  return (
-    <svg className="chart" viewBox={`0 0 ${width} ${height}`} role="img" aria-label={ariaLabel}>
-      {[2, 4, 6, 8, 10].map((value) => (
-        <line key={value} className="grid-line" x1={pad} x2={width - pad} y1={toY(value)} y2={toY(value)} />
-      ))}
-      {mood.path && <path className="line-mood" d={mood.path} />}
-      {energy.path && <path className="line-energy" d={energy.path} />}
-      {mood.dots.map((dot, index) => (
-        <circle key={`m${index}`} className="dot-mood" cx={dot.x} cy={dot.y} r="3.5" />
-      ))}
-      {energy.dots.map((dot, index) => (
-        <circle key={`e${index}`} className="dot-energy" cx={dot.x} cy={dot.y} r="3" />
-      ))}
-      {labels.length > 0 && (
-        <>
-          <text x={pad} y={height - 6} fontSize="12" fill="#7d7280">{labels[0]}</text>
-          <text x={width - pad} y={height - 6} fontSize="12" fill="#7d7280" textAnchor="end">{labels[labels.length - 1]}</text>
-        </>
-      )}
-    </svg>
-  )
-}
-
-/**
- * Insights. One load of check-ins; the range filter works in memory. Nothing here scores the
- * user, and intimacy logs are never shown on this screen.
- */
-const Insights = () => {
+const Insights = ({ session }) => {
   const { t } = useTranslation()
-  const checkins = useStoredJson(KEYS.checkins, EMPTY)
-  const journey = useStoredJson(KEYS.journey, DEFAULT_JOURNEY)
-  const prefs = getPrefs()
-  const [range, setRange] = useState(30)
+  const [cycles, setCycles] = useState([])
+  const [isLoading, setIsLoading] = useState(Boolean(session?.user?.id))
+  const [error, setError] = useState('')
 
-  const allDates = useMemo(() => Object.keys(checkins).sort(), [checkins])
-
-  const filtered = useMemo(() => {
-    if (range === 'all') return allDates
-    const since = toDateKey(subDays(new Date(), range - 1))
-    return allDates.filter((key) => key >= since)
-  }, [allDates, range])
-
-  const points = filtered.map((key) => ({ key, mood: checkins[key].mood ?? null, energy: checkins[key].energy ?? null }))
-  const moods = points.map((point) => point.mood).filter((value) => value != null)
-  const energies = points.map((point) => point.energy).filter((value) => value != null)
-
-  const last30 = allDates.filter((key) => key >= toDateKey(subDays(new Date(), 29))).length
-
-  // Reviewing a month counts as a monthly review, once, when there is enough to review.
   useEffect(() => {
-    if (!prefs.gamification) return
-    if (last30 >= 7 && !journey.milestones.monthly_review) {
-      const eligible = eligibleMilestones({ reviewedMonth: true })
-      if (eligible.some((key) => awardMilestone(key))) celebrate('milestone', { pattern: 'sparkle', color: '#c26c95' })
+    let isMounted = true
+
+    const loadCycles = async () => {
+      if (!session?.user?.id) {
+        setIsLoading(false)
+        return
+      }
+      setIsLoading(true)
+      const { data, error: queryError } = await supabase
+        .from('cycles')
+        .select('id, mood, energy, libido, phase, date')
+        .eq('user_id', session.user.id)
+        .order('date', { ascending: false })
+        .limit(14)
+
+      if (!isMounted) return
+      if (queryError) {
+        setError(queryError.message || t('errorGeneric'))
+      } else {
+        setCycles((data || []).reverse())
+      }
+      setIsLoading(false)
     }
-  }, [last30, journey.milestones.monthly_review, prefs.gamification])
 
-  const labels = points.length
-    ? [format(parseISO(points[0].key), 'd MMM'), format(parseISO(points[points.length - 1].key), 'd MMM')]
-    : []
+    loadCycles().catch((queryError) => {
+      if (isMounted) {
+        setError(queryError.message || t('errorGeneric'))
+        setIsLoading(false)
+      }
+    })
 
-  const rangeLabel = (value) => (value === 'all' ? t('insights.rangeAll') : t('insights.rangeDays', { count: value }))
+    return () => { isMounted = false }
+  }, [session?.user?.id, t])
+
+  const moodAverage = useMemo(() => average(cycles, 'mood'), [cycles])
+  const energyAverage = useMemo(() => average(cycles, 'energy'), [cycles])
+  const moodPoints = useMemo(() => makePoints(cycles, 'mood'), [cycles])
+  const energyPoints = useMemo(() => makePoints(cycles, 'energy'), [cycles])
 
   return (
-    <div className="section-gap">
-      <header>
-        <p className="card-kicker">{t('insights.kicker')}</p>
-        <h1 className="hero-title" style={{ fontSize: 'clamp(1.9rem, 5vw, 2.5rem)', marginTop: 6 }}>{t('insights.title')}</h1>
-        <p className="muted" style={{ marginTop: 6 }}>{t('insights.intro')}</p>
-      </header>
-
-      <div className="seg" role="group" aria-label={t('insights.rangeLabel')}>
-        {RANGES.map((value) => (
-          <button key={value} type="button" aria-pressed={range === value} onClick={() => setRange(value)}>
-            {rangeLabel(value)}
-          </button>
-        ))}
-      </div>
-
-      <section className="grid-2">
-        <div className="card stat">
-          <span className="card-kicker">{t('insights.daysLogged')}</span>
-          <strong>{points.length}</strong>
-          <small>{t('insights.daysLoggedHint')}</small>
-        </div>
-        <div className="card stat">
-          <span className="card-kicker">{t('insights.averageMood')}</span>
-          <strong>{average(moods) ?? '–'}</strong>
-          <small>{t('insights.outOfTen')}</small>
-        </div>
-        <div className="card stat">
-          <span className="card-kicker">{t('insights.averageEnergy')}</span>
-          <strong>{average(energies) ?? '–'}</strong>
-          <small>{t('insights.outOfTen')}</small>
-        </div>
-        <div className="card stat">
-          <span className="card-kicker">{t('insights.last30')}</span>
-          <strong>{last30}</strong>
-          <small>{t('insights.last30Hint')}</small>
-        </div>
+    <div className="insights-page">
+      <section className="insight-explainer">
+        <div className="insight-explainer-icon"><FiInfo aria-hidden="true" /></div>
+        <div><strong>Curiosity, not certainty.</strong><p>{t('insightsDescription')}</p></div>
       </section>
 
-      <section className="card stack" aria-labelledby="trend-title">
-        <div className="between">
-          <h2 id="trend-title" style={{ fontSize: '1.2rem' }}>{t('insights.trendTitle')}</h2>
-          <div className="row" style={{ gap: 14, fontSize: '0.86rem' }}>
-            <span><span aria-hidden="true" style={{ display: 'inline-block', width: 14, height: 3, background: 'var(--berry)', borderRadius: 2, verticalAlign: 'middle', marginRight: 6 }} />{t('checkIn.mood')}</span>
-            <span><span aria-hidden="true" style={{ display: 'inline-block', width: 14, height: 3, background: 'var(--follicular)', borderRadius: 2, verticalAlign: 'middle', marginRight: 6 }} />{t('checkIn.energy')}</span>
-          </div>
+      {error && <Alert severity="warning" className="dashboard-alert">{error}</Alert>}
+
+      <div className="insights-summary-grid">
+        <InsightStat icon={FiActivity} label={t('averageMood')} value={moodAverage ? `${moodAverage.toFixed(1)} / 10` : '—'} accent="rose" />
+        <InsightStat icon={FiSun} label={t('averageEnergy')} value={energyAverage ? `${energyAverage.toFixed(1)} / 10` : '—'} accent="sage" />
+        <InsightStat icon={FiHeart} label={t('checkInCount')} value={cycles.length} accent="lilac" />
+      </div>
+
+      <motion.section className="insight-chart-card" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}>
+        <div className="insight-card-heading">
+          <div><span className="eyebrow-label">THE LAST TWO WEEKS</span><h2>{t('recentMood')}</h2></div>
+          <span className="chart-legend"><i />{t('mood')}</span>
         </div>
-        {points.length === 0 ? (
-          <p className="muted">{t('insights.empty')}</p>
+        {isLoading ? (
+          <Skeleton height={190} />
+        ) : cycles.length >= 2 ? (
+          <ResponsiveChart moodPoints={moodPoints} energyPoints={energyPoints} cycles={cycles} />
         ) : (
-          <TrendChart points={points} labels={labels} ariaLabel={t('insights.trendAria', { count: points.length })} />
+          <div className="insight-empty-state">
+            <span className="insight-empty-art">✧</span>
+            <strong>{t('noInsightsYet')}</strong>
+            <p>{t('needMoreData')}</p>
+          </div>
         )}
-        <p className="muted" style={{ fontSize: '0.86rem' }}>{t('insights.rangeNote')}</p>
+        {cycles.length >= 2 && <p className="chart-caption">Your scores are shown from oldest to newest. Patterns need time; every check-in is optional.</p>}
+      </motion.section>
+
+      <section className="pattern-note-grid">
+        <article className="pattern-note pattern-note-rose">
+          <span className="pattern-note-number">01</span>
+          <h3>Small patterns can be meaningful.</h3>
+          <p>Notice what supports you, without judging the days that feel different.</p>
+        </article>
+        <article className="pattern-note pattern-note-sage">
+          <span className="pattern-note-number">02</span>
+          <h3>Your experience is the expert.</h3>
+          <p>Cycle phase can offer context, not a rule for how you should feel.</p>
+        </article>
       </section>
     </div>
   )
+}
+
+const InsightStat = ({ icon: Icon, label, value, accent }) => (
+  <article className={`insight-stat-card insight-stat-${accent}`}>
+    <span className="insight-stat-icon"><Icon aria-hidden="true" /></span>
+    <span className="insight-stat-label">{label}</span>
+    <strong>{value}</strong>
+  </article>
+)
+
+const ResponsiveChart = ({ moodPoints, energyPoints, cycles }) => (
+  <div className="chart-wrap">
+    <svg className="insight-chart" viewBox="0 0 700 190" role="img" aria-label="Mood and energy ratings across recent check-ins">
+      {[1, 3, 5, 7, 10].map((line) => {
+        const y = 158 - ((line - 1) / 9) * 131
+        return <g key={line}><line x1="36" x2="686" y1={y} y2={y} className="chart-grid-line" /><text x="12" y={y + 4} className="chart-axis-label">{line}</text></g>
+      })}
+      {moodPoints && <polyline points={moodPoints} className="chart-line chart-line-mood" />}
+      {energyPoints && <polyline points={energyPoints} className="chart-line chart-line-energy" />}
+      {cycles.map((cycle, index) => {
+        const x = 44 + (index * 630) / Math.max(cycles.length - 1, 1)
+        const mood = Number(cycle.mood)
+        const y = mood > 0 ? 158 - ((Math.min(mood, 10) - 1) / 9) * 131 : null
+        return y === null ? null : <circle key={cycle.id} cx={x} cy={y} r="4.5" className="chart-point" />
+      })}
+    </svg>
+    <div className="chart-axis-dates">
+      <span>{cycles[0]?.date}</span>
+      <span>{cycles[cycles.length - 1]?.date}</span>
+    </div>
+    <div className="chart-legend-row"><span><i className="legend-dot legend-dot-mood" />Mood</span><span><i className="legend-dot legend-dot-energy" />Energy</span></div>
+  </div>
+)
+
+const average = (records, key) => {
+  const values = records.map((record) => Number(record[key])).filter((value) => Number.isFinite(value) && value > 0)
+  if (!values.length) return null
+  return values.reduce((sum, value) => sum + value, 0) / values.length
+}
+
+const makePoints = (records, key) => {
+  const available = records.map((record, index) => ({ index, value: Number(record[key]) })).filter((item) => Number.isFinite(item.value) && item.value > 0)
+  if (available.length < 2) return ''
+  const maxIndex = Math.max(records.length - 1, 1)
+  return available.map(({ index, value }) => {
+    const x = 44 + (index * 630) / maxIndex
+    const y = 158 - ((Math.min(Math.max(value, 1), 10) - 1) / 9) * 131
+    return `${x},${y}`
+  }).join(' ')
 }
 
 export default Insights

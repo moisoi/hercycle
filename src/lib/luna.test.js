@@ -1,62 +1,31 @@
-import { replyTo } from './luna'
+import { makeLocalReply, summarizeCycles } from './luna'
 
-const profile = { phase: 'menstrual', day: 2 }
+describe('Luna context and local conversation', () => {
+  test('uses explicit unique period starts to summarize the last start and observed average', () => {
+    const summary = summarizeCycles([
+      { date: '2025-01-01', phase: 'menstrual', mood: 5, energy: 5, period_start_date: '2025-01-01' },
+      { date: '2025-01-02', phase: 'menstrual', mood: 5, energy: 4, period_start_date: '2025-01-01' },
+      { date: '2025-01-29', phase: 'follicular', mood: 6, energy: 6, period_start_date: '2025-01-29' },
+      { date: '2025-03-01', phase: 'menstrual', mood: 6, energy: 6, period_start_date: '2025-03-01' },
+      { date: '2025-03-04', phase: 'menstrual', mood: 6, energy: 6, period_start_date: '2025-02-31' },
+    ])
 
-describe('Luna replies', () => {
-  test('answers a one-word message with context', () => {
-    const reply = replyTo('cramps', { lang: 'en', profile })
-    expect(reply.topic).toBe('cramps')
-    expect(reply.text).toContain('day 2')
+    expect(summary.lastPeriodStartDate).toBe('2025-03-01')
+    expect(summary.averageCycleLength).toBe(29.5)
+    expect(summary.cycleLengthObservations).toBe(2)
   })
 
-  test('greets warmly and asks about the body and mood', () => {
-    expect(replyTo('hey', { lang: 'en' }).topic).toBe('greeting')
-  })
+  test('varies local replies instead of repeating one of the recent answers', () => {
+    const conversation = []
+    const replies = []
 
-  test('sends urgent symptoms to a clinician, not a casual reply', () => {
-    const reply = replyTo('I soaked through pads and have a fever', { lang: 'en' })
-    expect(reply.topic).toBe('urgent')
-    expect(reply.text).toMatch(/clinician|health professional/)
-  })
+    for (let index = 0; index < 4; index += 1) {
+      const reply = makeLocalReply('hello', {}, null, 'balanced', conversation)
+      expect(conversation.slice(-3).some((item) => item.role === 'assistant' && item.content === reply)).toBe(false)
+      replies.push(reply)
+      conversation.push({ role: 'assistant', content: reply })
+    }
 
-  test('a bare word like "bleeding" stays with period questions', () => {
-    expect(replyTo('bleeding', { lang: 'en' }).topic).toBe('period')
-  })
-
-  test('explicit messages get a witty, frank reply without graphic detail', () => {
-    const reply = replyTo('you are so fucking hot', { lang: 'en' })
-    expect(reply.topic).toBe('explicit')
-    expect(reply.text).toMatch(/bold|spicy|witty/i)
-    expect(reply.text).not.toMatch(/fuck|cock|pussy/i)
-  })
-
-  test('answers sex-health questions with practical education', () => {
-    expect(replyTo('pain during sex, what do I do', { lang: 'en' }).topic).toBe('sexpain')
-    expect(replyTo('which contraception is best', { lang: 'en' }).topic).toBe('contraception')
-  })
-
-  test('follow-ups like "tell me more" continue the previous topic', () => {
-    const first = replyTo('my energy is low', { lang: 'en', profile })
-    const history = [{ role: 'user', text: 'my energy is low' }, { role: 'luna', ...first }]
-    const follow = replyTo('tell me more', { lang: 'en', profile, history })
-    expect(follow.topic).toBe('energy')
-  })
-
-  test('falls back to a clarifying question for unclear messages', () => {
-    const reply = replyTo('zxq', { lang: 'en' })
-    expect(reply.topic).toBeNull()
-    expect(reply.text).toMatch(/\?/)
-  })
-
-  test('replies in Amharic when the message is in Amharic', () => {
-    const reply = replyTo('ቁርጠት አለብኝ', { lang: 'en' })
-    expect(reply.topic).toBe('cramps')
-    expect(reply.text).toMatch(/[\u1200-\u137F]/)
-  })
-
-  test('varies replies across a conversation instead of repeating one line', () => {
-    const first = replyTo('hungry', { lang: 'en' })
-    const second = replyTo('hungry', { lang: 'en', history: [{ role: 'user', text: 'x' }, { role: 'luna', text: first.text }] })
-    expect(second.text).not.toBe(first.text)
+    expect(new Set(replies).size).toBe(4)
   })
 })

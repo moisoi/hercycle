@@ -1,228 +1,225 @@
-import React, { useMemo, useState } from 'react'
+import React, { useEffect, useState } from 'react'
+import { Button } from '@mui/material'
+import { motion } from 'framer-motion'
+import { FiArrowLeft, FiArrowRight, FiCheck, FiShield } from 'react-icons/fi'
+import { GiLotus } from 'react-icons/gi'
+import { Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
-import { useNavigate } from 'react-router-dom'
-import { motion, AnimatePresence } from 'framer-motion'
-import { LuHeart, LuMoonStar, LuSparkles, LuWaves } from 'react-icons/lu'
 
-import Logo from '../components/Logo'
-import LangToggle from '../components/LangToggle'
-import AuthPanel from '../components/AuthPanel'
-import { Slider, SelectCard } from '../components/Controls'
-import { celebrate } from '../lib/celebrate'
-import { saveProfile, getProfile } from '../lib/repo'
-import { toDateKey } from '../lib/cycle'
-import { useSession } from '../lib/session'
-import { pushProfile } from '../lib/sync'
+import { supabase } from '../lib/supabase'
 
-const TONES = [
-  { key: 'playful', tint: '#e07a2e', icon: <LuSparkles />, pattern: 'sparkle' },
-  { key: 'balanced', tint: '#c26c95', icon: <LuHeart />, pattern: 'petal' },
-  { key: 'serious', tint: '#6b5ba0', icon: <LuMoonStar />, pattern: 'drop' },
+const phases = [
+  { key: 'menstrual', icon: '🌙' },
+  { key: 'follicular', icon: '🌱' },
+  { key: 'ovulatory', icon: '☀️' },
+  { key: 'luteal', icon: '🌸' },
 ]
 
-const STEPS = 3
+const tones = [
+  { key: 'playful', title: 'Warm and playful', description: 'Color, softness, and a little sparkle.' },
+  { key: 'balanced', title: 'A little of both', description: 'Gentle encouragement with clear information.' },
+  { key: 'serious', title: 'Quiet and straightforward', description: 'Keep things simple, grounded, and focused.' },
+]
 
-/** First run: welcome, cycle basics (both optional), and tone. Accounts are offered, never forced. */
-const Onboarding = () => {
+const Onboarding = ({ session, onComplete }) => {
   const { t } = useTranslation()
-  const navigate = useNavigate()
-  const { session } = useSession()
-  const existing = getProfile()
+  const [step, setStep] = useState(1)
+  const [selectedPhase, setSelectedPhase] = useState(null)
+  const [selectedTone, setSelectedTone] = useState('balanced')
+  const [isLoading, setIsLoading] = useState(Boolean(session?.user?.id))
+  const [isSaving, setIsSaving] = useState(false)
+  const [saveError, setSaveError] = useState('')
 
-  const [step, setStep] = useState(0)
-  const [isAdult, setIsAdult] = useState(false)
-  const [lastPeriodStart, setLastPeriodStart] = useState(existing.lastPeriodStart || '')
-  const [unsure, setUnsure] = useState(!existing.lastPeriodStart)
-  const [cycleLength, setCycleLength] = useState(existing.cycleLength)
-  const [periodLength, setPeriodLength] = useState(existing.periodLength)
-  const [tone, setTone] = useState(existing.tone || 'balanced')
-  const [showAccount, setShowAccount] = useState(false)
-  const [error, setError] = useState('')
-
-  const today = toDateKey(new Date())
-  const dateError = useMemo(() => {
-    if (unsure) return ''
-    if (!lastPeriodStart) return t('onboarding.dateRequired')
-    if (lastPeriodStart > today) return t('onboarding.dateFuture')
-    return ''
-  }, [unsure, lastPeriodStart, today, t])
-
-  const finish = async () => {
-    setError('')
-    const profile = saveProfile({
-      onboarded: true,
-      lastPeriodStart: unsure ? null : lastPeriodStart,
-      cycleLength,
-      periodLength,
-      tone,
-    })
-    if (session?.user?.id) {
-      try {
-        await pushProfile(session.user.id, profile)
-      } catch (failure) {
-        setError(failure.message)
+  useEffect(() => {
+    let isMounted = true
+    const loadSettings = async () => {
+      if (!session?.user?.id) {
+        try {
+          const saved = JSON.parse(window.localStorage.getItem('hercycle.onboarding') || '{}')
+          setSelectedPhase(saved.phase_selected || null)
+          setSelectedTone(saved.tone_preference || 'balanced')
+        } catch {
+          // Start gently with the defaults if browser storage is unavailable.
+        }
+        setIsLoading(false)
         return
       }
+
+      try {
+        const { data, error } = await supabase
+          .from('user_settings')
+          .select('phase_selected, tone_preference')
+          .eq('user_id', session.user.id)
+          .maybeSingle()
+        if (error) throw error
+        if (!isMounted) return
+        if (data) {
+          setSelectedPhase(data.phase_selected || null)
+          setSelectedTone(data.tone_preference || 'balanced')
+        }
+      } catch (error) {
+        console.error('Could not load onboarding preferences:', error)
+      } finally {
+        if (isMounted) setIsLoading(false)
+      }
     }
-    celebrate('burst', { x: window.innerWidth / 2, y: window.innerHeight / 3, pattern: 'sparkle', count: 22 })
-    navigate('/', { replace: true })
+    loadSettings()
+    return () => { isMounted = false }
+  }, [session?.user?.id])
+
+  const finishSetup = async () => {
+    setSaveError('')
+    setIsSaving(true)
+    const preferences = {
+      phase_selected: selectedPhase || 'menstrual',
+      tone_preference: selectedTone || 'balanced',
+    }
+
+    try {
+      window.localStorage.setItem('hercycle.onboarding', JSON.stringify(preferences))
+      if (session?.user?.id) {
+        const { error } = await supabase.from('user_settings').upsert({
+          user_id: session.user.id,
+          ...preferences,
+          onboarding_completed: true,
+          updated_at: new Date().toISOString(),
+        }, { onConflict: 'user_id' })
+        if (error) throw error
+      }
+      setStep(4)
+    } catch (error) {
+      console.error('Could not save setup preferences:', error)
+      setSaveError(error.message || t('errorGeneric'))
+    } finally {
+      setIsSaving(false)
+    }
   }
 
-  const next = () => setStep((value) => Math.min(STEPS - 1, value + 1))
-  const back = () => setStep((value) => Math.max(0, value - 1))
+  const completeWelcome = () => {
+    try {
+      window.localStorage.setItem('hercycle.onboarding.complete', 'true')
+    } catch {
+      // The current session can still continue when storage is unavailable.
+    }
+    onComplete?.()
+  }
 
   return (
-    <div className="shell">
-      <div className="shell-body" style={{ minHeight: '100vh' }}>
-        <header className="topbar">
-          <span className="brand" aria-hidden="true">
-            <span className="brand-logo">
-              <Logo />
-            </span>
-            <span className="brand-name">{t('app.name')}</span>
-          </span>
-          <LangToggle />
+    <main className="onboarding-shell">
+      <div className="onboarding-background-orb onboarding-background-orb-one" />
+      <div className="onboarding-background-orb onboarding-background-orb-two" />
+      <div className="onboarding-container">
+        <header className="onboarding-topbar">
+          <Link to="/onboarding" className="onboarding-brand" aria-label="HerCycle welcome">
+            <span className="app-brand-mark"><GiLotus aria-hidden="true" /></span>
+            <span>hercycle</span>
+          </Link>
+          <div className="onboarding-steps-copy">A gentler kind of cycle care</div>
         </header>
 
-        <main className="main" style={{ maxWidth: 620 }}>
-          <div className="stack" aria-live="polite">
-            <div role="progressbar" aria-valuemin={1} aria-valuemax={STEPS} aria-valuenow={step + 1} aria-label={t('onboarding.progress')} className="bar">
-              <i style={{ '--w': `${((step + 1) / STEPS) * 100}%`, display: 'block', height: '100%', width: `${((step + 1) / STEPS) * 100}%`, background: 'linear-gradient(90deg, var(--berry), #d68aa7)', transition: 'width 420ms cubic-bezier(0.22, 1, 0.36, 1)' }} />
-            </div>
+        <div className="onboarding-progress" role="progressbar" aria-valuemin={1} aria-valuemax={4} aria-valuenow={step} aria-label={`Step ${step} of 4`}>
+          {Array.from({ length: 4 }, (_, index) => <span key={index} className={`onboarding-progress-segment${step > index ? ' is-complete' : ''}`} />)}
+        </div>
 
-            <AnimatePresence mode="wait" initial={false}>
-              <motion.section
-                key={step}
-                className="stack"
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, transition: { duration: 0.15 } }}
-                transition={{ duration: 0.24, ease: [0.22, 1, 0.36, 1] }}
-              >
-                {step === 0 && (
-                  <>
-                    <p className="card-kicker">{t('onboarding.kicker')}</p>
-                    <h1 className="hero-title">{t('onboarding.welcomeTitle')}</h1>
-                    <p className="muted" style={{ fontSize: '1.05rem' }}>{t('onboarding.welcomeBody')}</p>
-                    <div className="card stack">
-                      <p>{t('onboarding.privacy')}</p>
-                      <label className="switch">
-                        <input type="checkbox" checked={isAdult} onChange={(event) => setIsAdult(event.target.checked)} />
-                        <span className="track" aria-hidden="true" />
-                        <span className="switch-label">
-                          <strong>{t('onboarding.ageLabel')}</strong>
-                          <small>{t('onboarding.ageHelp')}</small>
-                        </span>
-                      </label>
-                    </div>
-                    <div className="row">
-                      <button type="button" className="btn" onClick={next} disabled={!isAdult}>
-                        {t('onboarding.start')}
-                      </button>
-                      <button type="button" className="btn ghost" onClick={() => setShowAccount((value) => !value)} aria-expanded={showAccount}>
-                        {t('onboarding.haveAccount')}
-                      </button>
-                    </div>
-                    {showAccount && (
-                      <div className="card">
-                        <AuthPanel />
-                      </div>
-                    )}
-                  </>
-                )}
-
-                {step === 1 && (
-                  <>
-                    <h2>{t('onboarding.cycleTitle')}</h2>
-                    <p className="muted">{t('onboarding.cycleBody')}</p>
-                    <div className="card stack">
-                      <label className="field">
-                        <span>{t('onboarding.lastPeriod')}</span>
-                        <input
-                          className="input"
-                          type="date"
-                          max={today}
-                          value={lastPeriodStart}
-                          disabled={unsure}
-                          onChange={(event) => setLastPeriodStart(event.target.value)}
-                          aria-invalid={Boolean(dateError)}
-                          aria-describedby="onboarding-date-help"
-                        />
-                        <small id="onboarding-date-help" className={dateError ? 'field-error' : ''}>
-                          {dateError || t('onboarding.dateHelp')}
-                        </small>
-                      </label>
-                      <label className="switch">
-                        <input type="checkbox" checked={unsure} onChange={(event) => setUnsure(event.target.checked)} />
-                        <span className="track" aria-hidden="true" />
-                        <span className="switch-label">
-                          <strong>{t('onboarding.unsure')}</strong>
-                          <small>{t('onboarding.unsureHint')}</small>
-                        </span>
-                      </label>
-                      <Slider id="cycle-length" label={t('onboarding.cycleLength')} value={cycleLength} min={21} max={40} unit={t('units.days')} onChange={setCycleLength} tint="var(--berry)" lowLabel="21" highLabel="40" pattern="sparkle" />
-                      <Slider id="period-length" label={t('onboarding.periodLength')} value={periodLength} min={2} max={10} unit={t('units.days')} onChange={setPeriodLength} tint="#c15b70" lowLabel="2" highLabel="10" pattern="drop" />
-                    </div>
-                  </>
-                )}
-
-                {step === 2 && (
-                  <>
-                    <h2>{t('onboarding.toneTitle')}</h2>
-                    <p className="muted">{t('onboarding.toneBody')}</p>
-                    <div className="grid-2">
-                      {TONES.map((item) => (
-                        <SelectCard
-                          key={item.key}
-                          pressed={tone === item.key}
-                          onSelect={() => setTone(item.key)}
-                          icon={item.icon}
-                          title={t(`tones.${item.key}.title`)}
-                          hint={t(`tones.${item.key}.hint`)}
-                          tint={item.tint}
-                          pattern={item.pattern}
-                        />
-                      ))}
-                    </div>
-                    <div className="card stack">
-                      <p className="card-kicker">{t('onboarding.backupTitle')}</p>
-                      <p className="muted">{t('onboarding.backupBody')}</p>
-                      {session?.user ? (
-                        <p>{t('onboarding.alreadySignedIn')}</p>
-                      ) : (
-                        <AuthPanel />
-                      )}
-                    </div>
-                    {error && (
-                      <div className="notice warn" role="alert">
-                        {error}
-                      </div>
-                    )}
-                  </>
-                )}
+        {isLoading ? (
+          <div className="onboarding-loading" role="status">Loading your saved preferences…</div>
+        ) : (
+          <>
+            {step === 1 && (
+              <motion.section className="onboarding-welcome" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.45 }}>
+                <div className="onboarding-welcome-copy">
+                  <div className="onboarding-eyebrow"><span aria-hidden="true">✦</span> YOUR CYCLE, YOUR WAY</div>
+                  <h1 className="onboarding-title">{t('welcome')}</h1>
+                  <p className="onboarding-description">{t('welcomeDescription')}</p>
+                  <div className="onboarding-benefits">
+                    <div><span>01</span><p>Gentle daily check-ins</p></div>
+                    <div><span>02</span><p>Patterns without pressure</p></div>
+                    <div><span>03</span><p>Your data stays yours</p></div>
+                  </div>
+                  <Button variant="contained" onClick={() => setStep(2)} className="onboarding-cta" endIcon={<FiArrowRight aria-hidden="true" />}>
+                    {t('getStarted')}
+                  </Button>
+                  <div className="onboarding-privacy-note"><FiShield aria-hidden="true" /> Private by design. Here for you, never to judge.</div>
+                </div>
+                <div className="onboarding-art" aria-label="Luna, your gentle lotus companion">
+                  <div className="onboarding-art-glow" />
+                  <div className="onboarding-art-orbit onboarding-art-orbit-one" />
+                  <div className="onboarding-art-orbit onboarding-art-orbit-two" />
+                  <div className="onboarding-art-center">
+                    <span className="onboarding-mascot-face" aria-hidden="true">☺</span>
+                    <GiLotus className="onboarding-mascot-lotus" aria-hidden="true" />
+                  </div>
+                  <div className="onboarding-art-chip onboarding-art-chip-top">Hi, I’m Luna</div>
+                  <div className="onboarding-art-chip onboarding-art-chip-bottom">A little care, every day</div>
+                  <span className="onboarding-art-star onboarding-art-star-one">✦</span>
+                  <span className="onboarding-art-star onboarding-art-star-two">✧</span>
+                </div>
               </motion.section>
-            </AnimatePresence>
-
-            {step > 0 && (
-              <div className="between">
-                <button type="button" className="btn quiet" onClick={back}>
-                  {t('onboarding.back')}
-                </button>
-                {step === 1 ? (
-                  <button type="button" className="btn" onClick={next} disabled={Boolean(dateError)}>
-                    {t('onboarding.next')}
-                  </button>
-                ) : (
-                  <button type="button" className="btn" onClick={finish}>
-                    <LuWaves aria-hidden="true" /> {t('onboarding.finish')}
-                  </button>
-                )}
-              </div>
             )}
-          </div>
-        </main>
+
+            {step === 2 && (
+              <motion.section className="onboarding-step-panel" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}>
+                <span className="eyebrow-label">FIRST, A LITTLE CONTEXT</span>
+                <h1>{t('tellUs')}</h1>
+                <p>Choose the phase that feels closest today. You can change it any time.</p>
+                <div className="onboarding-phase-grid">
+                  {phases.map((phase) => (
+                    <motion.button
+                      key={phase.key}
+                      type="button"
+                      className={`onboarding-phase-card${selectedPhase === phase.key ? ' is-selected' : ''}`}
+                      aria-pressed={selectedPhase === phase.key}
+                      onClick={() => setSelectedPhase(phase.key)}
+                      whileHover={{ y: -3 }}
+                      whileTap={{ scale: 0.98 }}
+                    >
+                      <span>{phase.icon}</span><strong>{t(`phase.${phase.key}`)}</strong>
+                      {selectedPhase === phase.key && <FiCheck aria-hidden="true" />}
+                    </motion.button>
+                  ))}
+                </div>
+                <div className="onboarding-step-actions">
+                  <button type="button" className="onboarding-back-button" onClick={() => setStep(1)}><FiArrowLeft /> Back</button>
+                  <Button variant="contained" disabled={!selectedPhase} onClick={() => setStep(3)} className="onboarding-cta">Continue <FiArrowRight /></Button>
+                </div>
+              </motion.section>
+            )}
+
+            {step === 3 && (
+              <motion.section className="onboarding-step-panel" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}>
+                <span className="eyebrow-label">A VOICE THAT FEELS RIGHT</span>
+                <h1>{t('chooseTone')}</h1>
+                <p>Pick the kind of encouragement you would like from Luna.</p>
+                <div className="onboarding-tone-grid">
+                  {tones.map((tone) => (
+                    <button key={tone.key} type="button" className={`onboarding-tone-card${selectedTone === tone.key ? ' is-selected' : ''}`} aria-pressed={selectedTone === tone.key} onClick={() => setSelectedTone(tone.key)}>
+                      <span className="onboarding-tone-mark">{selectedTone === tone.key ? <FiCheck /> : '✧'}</span>
+                      <strong>{tone.title}</strong><span>{tone.description}</span>
+                    </button>
+                  ))}
+                </div>
+                {saveError && <p className="onboarding-error" role="alert">{saveError}</p>}
+                <div className="onboarding-step-actions">
+                  <button type="button" className="onboarding-back-button" onClick={() => setStep(2)}><FiArrowLeft /> Back</button>
+                  <Button variant="contained" disabled={isSaving} onClick={finishSetup} className="onboarding-cta">{isSaving ? 'Saving…' : t('completeOnboarding')} <FiArrowRight /></Button>
+                </div>
+              </motion.section>
+            )}
+
+            {step === 4 && (
+              <motion.section className="onboarding-complete-panel" initial={{ opacity: 0, scale: 0.97 }} animate={{ opacity: 1, scale: 1 }}>
+                <div className="onboarding-complete-mascot"><GiLotus aria-hidden="true" /><span>☺</span></div>
+                <span className="eyebrow-label">THIS SPACE IS YOURS</span>
+                <h1>{t('onboardingComplete')}</h1>
+                <p>{t('meetMascot')}</p>
+                <Button fullWidth variant="contained" onClick={completeWelcome} className="onboarding-cta">{t('continue')} <FiArrowRight /></Button>
+                <p className="onboarding-complete-note">No perfect streaks. No pressure. Just you, in your own rhythm.</p>
+              </motion.section>
+            )}
+          </>
+        )}
       </div>
-    </div>
+    </main>
   )
 }
 

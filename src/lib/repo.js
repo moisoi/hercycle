@@ -1,11 +1,12 @@
 import { DEFAULT_PROFILE, normalizeCycleLength, normalizePeriodLength } from './cycle'
-import { KEYS, readJson, writeJson } from './store'
+import { KEYS, readJson, writeJson, writeRaw } from './store'
 
 export const DEFAULT_PREFS = Object.freeze({
   gamification: true, // Journey and milestones on or off
   showRewards: true, // show milestone and stage celebrations
   celebrate: true, // full-screen celebrations
   hideIntimacy: false, // hide the Intimacy tab from navigation
+  reminders: true, // in-app reminder cards on Today
 })
 
 export const DEFAULT_JOURNEY = Object.freeze({
@@ -16,7 +17,6 @@ export const DEFAULT_JOURNEY = Object.freeze({
 })
 
 const EMPTY_OBJECT = Object.freeze({})
-const EMPTY_LIST = Object.freeze([])
 
 export const getProfile = () => ({ ...DEFAULT_PROFILE, ...readJson(KEYS.profile, EMPTY_OBJECT) })
 
@@ -69,6 +69,10 @@ export function setIntentions(intentions) {
   writeJourney({ intentions })
 }
 
+export function setAccent(accent) {
+  writeJourney({ accent })
+}
+
 export function recordQuiz(lessonId, { correct, total }) {
   const journey = getJourney()
   const previous = journey.quizzes[lessonId] || { attempts: 0, best: 0 }
@@ -97,4 +101,7 @@ export const hasMotion = () => {
   }
 }
 
-export { EMPTY_LIST }
+export const setMotion = (on) => {
+  writeRaw(KEYS.motion, on ? 'on' : 'off')
+}
+

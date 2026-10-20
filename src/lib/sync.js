@@ -1,6 +1,6 @@
 import { supabase } from './supabase'
 import { getCheckins, getIntimacy, getJourney, getProfile, saveProfile } from './repo'
-import { KEYS, readJson, writeJson } from './store'
+import { KEYS, writeJson } from './store'
 
 /**
  * Merges guest data with account data, keyed by date.
@@ -135,4 +135,16 @@ export async function pushProfile(userId, profile) {
   if (error) throw new Error(error.message)
 }
 
-export const readStoredCheckins = () => readJson(KEYS.checkins, {})
+/** Uploads one check-in for a signed-in user. Guest check-ins stay on the device. */
+export async function pushCheckin(userId, dateKey, entry) {
+  const client = requireClient()
+  const { error } = await client.from('cycles').upsert(checkinRow(userId, dateKey, entry), { onConflict: 'user_id,date' })
+  if (error) throw new Error(error.message)
+}
+
+/** Uploads one intimacy log for a signed-in user. Guest logs stay on the device. */
+export async function pushIntimacy(userId, dateKey, entry) {
+  const client = requireClient()
+  const { error } = await client.from('intimacy_logs').upsert(intimacyRow(userId, dateKey, entry), { onConflict: 'user_id,date' })
+  if (error) throw new Error(error.message)
+}

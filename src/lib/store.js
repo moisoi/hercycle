@@ -69,3 +69,8 @@ export function useStoredJson(key, fallback) {
     }
   }, [raw, fallback])
 }
+
+/** Reactive read of a raw string value, such as the motion switch ('on' or 'off'). */
+export function useRaw(key) {
+  return useSyncExternalStore(subscribe, () => readRaw(key), () => null)
+}

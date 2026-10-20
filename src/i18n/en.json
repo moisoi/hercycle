@@ -1,0 +1,616 @@
+{
+  "app": {
+    "name": "HerCycle"
+  },
+  "language": "Language",
+  "units": {
+    "days": "days"
+  },
+  "nav": {
+    "label": "Main navigation",
+    "today": "Today",
+    "checkIn": "Check-in",
+    "intimacy": "Intimacy",
+    "journey": "Journey",
+    "insights": "Insights",
+    "settings": "Settings"
+  },
+  "onboarding": {
+    "progress": "Setup progress",
+    "kicker": "Your space, your choice",
+    "welcomeTitle": "Welcome to HerCycle.",
+    "welcomeBody": "A calm place to track your cycle, notice how you feel, and talk through the questions you would rather not Google at 2 am.",
+    "privacy": "Your entries stay on this device unless you create an account and choose to back them up. You can export or delete everything in Settings.",
+    "start": "Get started",
+    "haveAccount": "I already have an account",
+    "cycleTitle": "Your cycle, roughly",
+    "cycleBody": "Both answers are optional. If you are not sure, that is fine. HerCycle will still help.",
+    "lastPeriod": "First day of your last period",
+    "dateHelp": "Used to estimate your phase. You can change it any time.",
+    "dateRequired": "Pick a date, or tick \"I'm not sure\".",
+    "dateFuture": "That date is in the future.",
+    "unsure": "I'm not sure of the date",
+    "unsureHint": "We will keep the estimate neutral until you add one.",
+    "cycleLength": "Usual cycle length",
+    "periodLength": "Usual period length",
+    "toneTitle": "How would you like HerCycle to talk to you?",
+    "toneBody": "You can change this later. It only affects wording, never what the app tracks.",
+    "backupTitle": "Back up across devices (optional)",
+    "backupBody": "Sign in to keep your entries safe and open them on another phone. Guest mode works fully without an account.",
+    "alreadySignedIn": "You are already signed in. Your entries will sync to your account.",
+    "back": "Back",
+    "next": "Next",
+    "finish": "Finish setup",
+    "ageLabel": "I am 20 or older",
+    "ageHelp": "HerCycle is for adults. Please confirm your age to continue."
+  },
+  "tones": {
+    "playful": {
+      "title": "Playful",
+      "hint": "Light, witty, a little flirty."
+    },
+    "balanced": {
+      "title": "Balanced",
+      "hint": "Warm and clear, with a bit of humour."
+    },
+    "serious": {
+      "title": "Plain",
+      "hint": "Direct and calm, no jokes."
+    }
+  },
+  "splash": {
+    "logo": "HerCycle logo"
+  },
+  "today": {
+    "noCycleTitle": "Add your last period date",
+    "noCycleBody": "Once you add a date, Today shows where you are in your cycle and what that can mean for your day.",
+    "dayOf": "Day {{day}} of about {{length}}",
+    "addDate": "Add a date",
+    "checkedIn": "Checked in today",
+    "notCheckedIn": "How are you today?",
+    "checkInKicker": "Daily check-in",
+    "checkInBody": "Two sliders and a mood card. It takes under a minute.",
+    "logCheckIn": "Check in now",
+    "editCheckIn": "Edit today's check-in",
+    "gardenKicker": "Your garden",
+    "gardenLink": "Open your journey",
+    "gardenBody": "Your garden only grows. Missed days never shrink it.",
+    "tipKicker": "Small thing for today",
+    "tipBody": "Water and a real meal count as self-care, even on busy days."
+  },
+  "phase": {
+    "menstrual": {
+      "name": "Period",
+      "tip": "Go gently. Warmth, rest, and iron-rich food can help."
+    },
+    "follicular": {
+      "name": "Rising",
+      "tip": "Energy often climbs. Good time to start things."
+    },
+    "ovulatory": {
+      "name": "Peak",
+      "tip": "Many people feel most social and confident now."
+    },
+    "luteal": {
+      "name": "Winding down",
+      "tip": "Protect your sleep and keep snacks close by."
+    },
+    "general": {
+      "name": "Your day",
+      "tip": "Track a few days to see your own pattern."
+    }
+  },
+  "reminders": {
+    "sectionLabel": "Gentle reminders",
+    "gentleTitle": "A small reminder",
+    "pause": "Pause",
+    "resume": "Resume",
+    "note": [
+      "You are doing better than you think.",
+      "Hi, gorgeous. Remember to drink water.",
+      "Your body is working hard for you. Be kind to it today.",
+      "Quick check: have you eaten something real today?",
+      "Soft reminder: you are allowed to rest without earning it.",
+      "I still think you are the best part of my day.",
+      "Stretch your shoulders. You have been holding a lot.",
+      "Be proud of the small things you did this week."
+    ],
+    "gentle": [
+      "You are allowed to take up space today.",
+      "Water first, then the big stuff. Hydration is a love language.",
+      "Babe, have you eaten? Please eat something with some protein.",
+      "Lunch reminder from your favourite person: real food, not just coffee.",
+      "Your feelings make sense, even the messy ones.",
+      "Take three slow breaths. I'll wait.",
+      "Tell someone you trust something good that happened today.",
+      "Rest is not a reward. It is part of the plan.",
+      "I'm proud of you for showing up, even on the slow days."
+    ],
+    "phase": {
+      "menstrual": [
+        "Heat pack on, feet up, nothing urgent. Really.",
+        "Iron-rich food today would be a good idea, babe.",
+        "If you feel tired, that is your body asking for less, not for you to try harder."
+      ],
+      "follicular": [
+        "Energy is climbing. Pick one thing you have been putting off.",
+        "A good day to try something new. I believe in you.",
+        "Fresh week, fresh start. Go on, make it count."
+      ],
+      "ovulatory": [
+        "Feeling bright? Let it show, and drink some water while you do.",
+        "You are magnetic right now. Use it kindly.",
+        "Plan something fun this week. You deserve a good evening."
+      ],
+      "luteal": [
+        "Cravings are normal. Pair a snack with some protein.",
+        "Slow down the evening. Your sleep matters more than one more task.",
+        "Be gentle with your inner voice. It is louder this week, and it does not always tell the truth."
+      ]
+    }
+  },
+  "luna": {
+    "open": "Open Luna",
+    "close": "Close Luna",
+    "title": "Luna",
+    "subtitle": "Cycle, body, and relationship questions. Private, on this device.",
+    "greeting": "Hey, I'm Luna. Ask me anything about your cycle, your body, or the relationship stuff you would rather not Google. Short questions are fine.",
+    "placeholder": "Ask Luna anything...",
+    "send": "Send message",
+    "typing": "Luna is typing",
+    "newChat": "Start a new chat",
+    "suggestions": [
+      "Why do I feel so tired before my period?",
+      "Is cramping normal?",
+      "How do I talk to my partner about what I want?",
+      "What is a fertile window?"
+    ]
+  },
+  "checkIn": {
+    "title": "Check in",
+    "intro": "Pick the card that fits, then move the sliders. Nothing here is judged.",
+    "moodCardsTitle": "How does today feel?",
+    "moodCardsBody": "Pick one card. The colour follows your choice.",
+    "slidersTitle": "Mood and energy",
+    "mood": "Mood",
+    "energy": "Energy",
+    "moodLow": "Heavy",
+    "moodHigh": "Bright",
+    "energyLow": "Drained",
+    "energyHigh": "Charged",
+    "moods": {
+      "calm": {
+        "title": "Calm",
+        "hint": "Steady and settled"
+      },
+      "happy": {
+        "title": "Happy",
+        "hint": "Light and content"
+      },
+      "energised": {
+        "title": "Energised",
+        "hint": "Full of go"
+      },
+      "tired": {
+        "title": "Tired",
+        "hint": "Running low"
+      },
+      "sensitive": {
+        "title": "Sensitive",
+        "hint": "Tender, close to the surface"
+      }
+    },
+    "periodLabel": "My period started today or is ongoing",
+    "periodHint": "Helps Luna and the cycle view. Stays on this device unless you sign in.",
+    "noteLabel": "A note for yourself (optional)",
+    "notePlaceholder": "Anything you want to remember about today.",
+    "noteHelp": "Notes are private. Luna never reads them unless you ask in chat.",
+    "save": "Save check-in",
+    "saving": "Saving...",
+    "saved": "Saved",
+    "savedDevice": "Saved on this device.",
+    "savedAccount": "Saved to your account and on this device.",
+    "deviceHint": "Guest mode: saved on this device only. Sign in later to back it up.",
+    "syncFailed": "Saved on this device, but the account sync failed: {{message}}. Try again from Settings."
+  },
+  "intimacy": {
+    "title": "Intimacy",
+    "intro": "Ideas, a vibe, and a way to reach out. Nothing here is sent without you tapping send, and nothing is inferred from your cycle.",
+    "generalKicker": "Ideas for today",
+    "lightTitle": "How open do you feel today?",
+    "lightBody": "This shapes the ideas and wording below. You can change it any time, and it is never shared.",
+    "lights": {
+      "green": {
+        "title": "Open",
+        "hint": "Up for connection"
+      },
+      "yellow": {
+        "title": "Maybe",
+        "hint": "Slow and check in"
+      },
+      "red": {
+        "title": "Not today",
+        "hint": "Pause, and that is enough"
+      }
+    },
+    "comfort": "Comfort right now",
+    "comfortLow": "Guarded",
+    "comfortHigh": "Relaxed",
+    "libido": "Desire right now",
+    "libidoLow": "Quiet",
+    "libidoHigh": "Strong",
+    "libidoLowNote": "Low desire is valid. Rest, warmth, and closeness without sex count too.",
+    "libidoHighNote": "Strong desire is welcome. Keep the pace yours and say what you enjoy.",
+    "readiness": {
+      "pause": "Pause. Stay close without pressure, or do something that feels safe.",
+      "slow": "Go slowly. Pick one idea and check in with each other often.",
+      "gentle": "Gentle pace. Warm touch, talk, and checking in.",
+      "open": "A good moment for connection. Keep it mutual and easy.",
+      "open-plus": "Open and energised. Plan something you both want, and keep saying yes out loud.",
+      "unset": "Pick how open you feel to get tailored ideas."
+    },
+    "ideasTitle": "Ideas for today ({{count}})",
+    "consentNote": "Ideas are not consent. Anything shared happens only when both of you want it, and either of you can stop at any point.",
+    "ideas": {
+      "menstrual": [
+        "A slow evening with a heat pack, a film, and a blanket",
+        "Gentle massage on the lower back or shoulders",
+        "Long talk, no agenda, just closeness",
+        "Bath together, or a warm shower with cuddles"
+      ],
+      "follicular": [
+        "Try something new together, like a new place to go",
+        "Flirt by text during the day",
+        "Plan a date that has a little adventure",
+        "Dance in the kitchen to something you both like"
+      ],
+      "ovulatory": [
+        "Dress up and go out somewhere lively",
+        "Say out loud what you find attractive about them",
+        "A slow, sensual massage with oil",
+        "Share a playlist that feels like the two of you"
+      ],
+      "luteal": [
+        "Cosy night in with a favourite snack",
+        "Affection without expectations: hold hands, sit close",
+        "Talk about what you need more of this month",
+        "Early night together, with a good book or slow music"
+      ],
+      "general": [
+        "Hold each other for a few minutes without talking",
+        "Ask one question about what they enjoy",
+        "Share a playlist or a memory",
+        "Plan a slow evening and see how it feels"
+      ]
+    },
+    "vibeTitle": "Pick a vibe",
+    "vibeBody": "A mood for the moment. Tap a card and the colour follows.",
+    "surprise": "Surprise me",
+    "vibes": {
+      "tender": {
+        "title": "Tender",
+        "hint": "Soft, close, unhurried"
+      },
+      "playful": {
+        "title": "Playful",
+        "hint": "Teasing, light, a bit of fun"
+      },
+      "bold": {
+        "title": "Bold",
+        "hint": "Direct, confident, a little daring"
+      }
+    },
+    "partnerMsg": {
+      "pause": "Hey, no pressure today. I'd love to just be close, whenever you feel like it.",
+      "slow": "Hey, I'm thinking about you. Want to take it slow and see how we feel?",
+      "gentle": "Hey, I'd like to spend some time together tonight. Gentle, no rush.",
+      "open": "Hey, I'm feeling close to you today. Want to plan something nice?",
+      "open-plus": "Hey, I'm feeling bold and wanted you to know. Tonight?",
+      "unset": "Hey, thinking about you. Want to talk later?"
+    },
+    "partner": {
+      "title": "Reach out to your partner",
+      "body": "Each option opens your own app with the message filled in. HerCycle does not send anything for you.",
+      "phone": "Their Ethiopian mobile number",
+      "phoneHelp": "Format: +251 then 9 digits starting with 7 or 9.",
+      "phoneOk": "Looks good.",
+      "errLocal": "Start with +251, not 0. For example +251 9XX XXX XXX.",
+      "errFormat": "Use +251 followed by 9 digits starting with 7 or 9.",
+      "email": "Their email (optional)",
+      "emailHelp": "Needed only for the email option.",
+      "errEmail": "That email does not look right yet.",
+      "message": "Message",
+      "messageHelp": "Edit it however you like. It starts from the readiness state above.",
+      "subject": "Thinking of you",
+      "sendGroup": "Send options",
+      "whatsapp": "WhatsApp",
+      "sms": "Text message",
+      "emailSend": "Email",
+      "copy": "Copy message",
+      "copied": "Copied",
+      "handoff": "Opens your own app. You still press send there."
+    },
+    "saveTitle": "Save today's readiness",
+    "saveBody": "Saves your openness, comfort, and desire for today. Used only to shape ideas on this device.",
+    "save": "Save for today",
+    "saving": "Saving...",
+    "saved": "Saved",
+    "savedDevice": "Saved on this device.",
+    "savedAccount": "Saved to your account and on this device.",
+    "deviceHint": "Guest mode: saved on this device only.",
+    "syncFailed": "Saved on this device, but the account sync failed: {{message}}.",
+    "hiddenTitle": "Intimacy is hidden",
+    "hiddenBody": "You turned this section off in Settings. Your data is untouched.",
+    "goSettings": "Open Settings"
+  },
+  "journey": {
+    "kicker": "Optional, private, yours",
+    "title": "Your journey",
+    "intro": "A garden that only grows. Milestones are private, nothing is scored, and you can turn this off at any time.",
+    "offTitle": "Your journey is off",
+    "offBody": "Nothing here is tracked as a reward. Lessons stay available. Turn it back on any time.",
+    "turnOn": "Turn journey on",
+    "gardenKicker": "Your garden",
+    "ringNext": "Next: {{stage}}",
+    "ringTop": "Fully grown",
+    "earned": "{{count}} of {{total}} milestones",
+    "accentTitle": "Garden colours",
+    "accents": {
+      "berry": "Berry",
+      "sage": "Sage",
+      "peach": "Peach",
+      "lavender": "Lavender"
+    },
+    "milestonesTitle": "Milestones",
+    "milestonesBody": "Each one is awarded once, with a quiet note. They are never compared with anyone.",
+    "milestones": {
+      "first_checkin": {
+        "title": "First check-in",
+        "hint": "Your first day, noticed."
+      },
+      "five_check_ins": {
+        "title": "Five days",
+        "hint": "Five check-ins in your own time."
+      },
+      "first_reflection": {
+        "title": "First reflection",
+        "hint": "A note to yourself."
+      },
+      "first_intention": {
+        "title": "First intention",
+        "hint": "Choose something you care about."
+      },
+      "first_lesson": {
+        "title": "First lesson",
+        "hint": "Open a learning card."
+      },
+      "learning_milestone": {
+        "title": "Quiz explorer",
+        "hint": "Finish a lesson quiz, however it goes."
+      },
+      "monthly_review": {
+        "title": "Month in view",
+        "hint": "Look back over a month of entries."
+      },
+      "make_it_yours": {
+        "title": "Make it yours",
+        "hint": "Pick your garden colour."
+      }
+    },
+    "awardedOn": "Earned {{date}}",
+    "badge": "Badge",
+    "intentionsTitle": "Intentions",
+    "intentionsBody": "Goals you can change, pause, or remove. Nothing here expires or counts against you.",
+    "addIntention": "Add an intention",
+    "intentions": {
+      "reflect": "Reflect more",
+      "learn": "Learn about my body",
+      "calm": "Be gentler with myself",
+      "connect": "Talk openly with my partner"
+    },
+    "customLabel": "Your own intention",
+    "customPlaceholder": "Write your own intention",
+    "addCustom": "Add",
+    "noIntentions": "No intentions yet. Pick one above or write your own.",
+    "paused": "paused",
+    "pause": "Pause intention",
+    "resume": "Resume intention",
+    "remove": "Remove intention",
+    "noPenalty": "Paused or removed intentions leave no trace on your garden.",
+    "lessonsTitle": "Learning cards",
+    "lessonsBody": "{{done}} of {{total}} cards tried. Quizzes are for learning, not a test, and you can retry any time.",
+    "lessonKicker": "Learning card",
+    "startQuiz": "Start quiz",
+    "retry": "Retry quiz",
+    "check": "Check answers",
+    "tryAgain": "Try again",
+    "close": "Close",
+    "completed": "Tried",
+    "result": "You got {{correct}} of {{total}} right. Each explanation is there to help you learn.",
+    "disclaimer": "These cards are general information, not medical advice. For symptoms or decisions about your health, talk to a clinician.",
+    "privacyNote": "Journey data stays on this device unless you sign in.",
+    "managePrefs": "Manage journey settings",
+    "lessons": {
+      "cycleBasics": {
+        "title": "Cycle basics",
+        "body": "A cycle runs from the first day of one period to the first day of the next. Lengths vary, and many people have a cycle between about 21 and 40 days.",
+        "questions": [
+          {
+            "q": "What counts as day 1 of a cycle?",
+            "options": [
+              "The day ovulation happens",
+              "The first day of your period",
+              "The day you start a new check-in"
+            ],
+            "answer": 1,
+            "explain": "Day 1 is the first day of bleeding. Counting from there keeps the rest simple."
+          },
+          {
+            "q": "Why might a cycle be a little longer or shorter from month to month?",
+            "options": [
+              "Something is always wrong",
+              "Stress, sleep, travel, and illness can all shift timing",
+              "You are counting incorrectly"
+            ],
+            "answer": 1,
+            "explain": "Normal variation is common. Persistent big changes are a good reason to talk to a clinician."
+          }
+        ]
+      },
+      "whatIsNormal": {
+        "title": "What is normal?",
+        "body": "Normal varies a lot. Cramps, flow, and mood can change with age, stress, and health. Tracking helps you notice what is usual for you.",
+        "questions": [
+          {
+            "q": "Which is a good reason to see a clinician?",
+            "options": [
+              "Your period is a day shorter than last month",
+              "Bleeding that soaks a pad every hour or lasts much longer than usual",
+              "You skipped a check-in"
+            ],
+            "answer": 1,
+            "explain": "Heavy or prolonged bleeding, severe pain, or fever deserve a professional look, even if it is the first time."
+          },
+          {
+            "q": "What is the most useful thing to track?",
+            "options": [
+              "Perfect dates every day",
+              "What feels usual for you, over a few months",
+              "Nothing, because patterns do not matter"
+            ],
+            "answer": 1,
+            "explain": "Patterns over several months matter more than any single day."
+          }
+        ]
+      },
+      "talkingToClinician": {
+        "title": "Talking to a clinician",
+        "body": "Bring a short summary: when your cycle started, what changed, and what worries you. Writing it down before the visit helps.",
+        "questions": [
+          {
+            "q": "What helps most before a clinic visit?",
+            "options": [
+              "Bring nothing",
+              "A short note with dates and what changed",
+              "A list of other people's symptoms"
+            ],
+            "answer": 1,
+            "explain": "A few dates and specific changes help a clinician help you quickly."
+          },
+          {
+            "q": "If a question feels embarrassing, what is best?",
+            "options": [
+              "Skip it",
+              "Ask it anyway; clinicians hear it all the time",
+              "Ask someone online instead"
+            ],
+            "answer": 1,
+            "explain": "Clinicians expect these questions. Asking is the point of the visit."
+          }
+        ]
+      }
+    }
+  },
+  "insights": {
+    "kicker": "Your patterns",
+    "title": "Insights",
+    "intro": "Mood and energy over time. Filter by range; nothing is scored, and intimacy logs never appear here.",
+    "rangeLabel": "Date range",
+    "rangeDays": "Last {{count}} days",
+    "rangeAll": "All time",
+    "daysLogged": "Days logged",
+    "daysLoggedHint": "In this range",
+    "averageMood": "Average mood",
+    "averageEnergy": "Average energy",
+    "outOfTen": "out of 10",
+    "last30": "Last 30 days",
+    "last30Hint": "Days with a check-in",
+    "trendTitle": "Mood and energy",
+    "trendAria": "Line chart of mood and energy across {{count}} check-ins",
+    "empty": "No check-ins in this range yet. Log today to start the picture.",
+    "rangeNote": "Your averages are a snapshot, not a grade. Missing days are simply not drawn."
+  },
+  "settings": {
+    "kicker": "Preferences",
+    "title": "Settings",
+    "intro": "Everything here is yours. Toggles apply straight away; cycle details save with the button.",
+    "accountTitle": "Account",
+    "guestNote": "You are in guest mode. Your data stays on this device. Sign in to back it up and open it elsewhere.",
+    "syncing": "Syncing with your account...",
+    "syncDone": "Synced. {{imported}} entries from this device were added to your account.",
+    "syncFailed": "Sync failed: {{message}}",
+    "cycleTitle": "Cycle",
+    "dateFuture": "That date is in the future.",
+    "dateHelp": "Used to estimate your phase. Change it any time.",
+    "toneLabel": "How HerCycle talks to you",
+    "fontLabel": "Text size",
+    "font": {
+      "small": "Small",
+      "medium": "Medium",
+      "large": "Large"
+    },
+    "savePreferences": "Save preferences",
+    "saving": "Saving...",
+    "saved": "Saved",
+    "savedDevice": "Saved on this device.",
+    "savedAccount": "Saved to your account and on this device.",
+    "deviceHint": "Guest mode: saved on this device only.",
+    "experienceTitle": "Experience",
+    "motion": "Motion",
+    "motionHint": "Turns the animations and sparkles on or off. Stored on this device only.",
+    "reminders": "Gentle reminders",
+    "remindersHint": "The rotating messages on Today.",
+    "notificationsNote": "HerCycle does not send push notifications. Reminders show only while the app is open.",
+    "journeyTitle": "Journey and rewards",
+    "gamification": "Journey garden",
+    "gamificationHint": "Milestones, the garden, and the journey tab. Turning it off hides them, nothing else.",
+    "showRewards": "Show rewards",
+    "showRewardsHint": "Full-screen moments for milestones and stages.",
+    "celebrate": "Celebrations",
+    "celebrateHint": "Small bursts when you complete things. Feedback never blocks saving.",
+    "privacyTitle": "Privacy",
+    "hideIntimacy": "Hide the Intimacy section",
+    "hideIntimacyHint": "Removes it from navigation. Your existing entries stay as they are.",
+    "export": "Export my data",
+    "delete": "Delete all data on this device",
+    "deleteConfirm": "Yes, delete everything",
+    "cancel": "Cancel",
+    "privacyBody": "Export gives you a JSON file of everything stored on this device. Deleting removes it from this device only; account data needs a separate request.",
+    "version": "HerCycle web app"
+  },
+  "auth": {
+    "mode": "Sign-in mode",
+    "signIn": "Sign in",
+    "create": "Create account",
+    "email": "Email",
+    "emailHelp": "We use it only to sign you in.",
+    "emailInvalid": "Enter a valid email address.",
+    "password": "Password",
+    "passwordHelp": "At least {{count}} characters.",
+    "working": "Working...",
+    "failed": "That did not work. Check your details and try again.",
+    "checkEmail": "Check your email to confirm your account, then sign in.",
+    "signedInAs": "Signed in as {{email}}",
+    "signOut": "Sign out",
+    "notConfigured": "Sign-in is not set up for this build. Guest mode works fully.",
+    "privacy": "Accounts are optional. Your data is shared with nobody else."
+  },
+  "garden": {
+    "stage": {
+      "seedbed": "Seedbed",
+      "seedling": "Seedling",
+      "sprout": "Sprout",
+      "bud": "Bud",
+      "bloom": "Bloom",
+      "grove": "Grove"
+    },
+    "desc": {
+      "seedbed": "Bare soil, ready for the first seed. Every start counts.",
+      "seedling": "A first green shoot. You have begun.",
+      "sprout": "Leaves are opening. Steady, small steps.",
+      "bud": "Buds are forming. Your habits are taking root.",
+      "bloom": "Flowers are out. You have built something real.",
+      "grove": "A small grove. Your garden keeps growing, at its own pace."
+    }
+  }
+}

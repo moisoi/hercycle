@@ -1,93 +1,113 @@
-import React, { useEffect, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import { AnimatePresence, MotionConfig } from 'framer-motion'
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 
-import Home from './screens/Home'
+import Splash from './components/Splash'
+import Shell from './components/Shell'
 import Onboarding from './screens/Onboarding'
+import Today from './screens/Home'
+import CheckIn from './screens/CheckIn'
+import Intimacy from './screens/Intimacy'
+import Journey from './screens/Journey'
+import Insights from './screens/Insights'
+import Settings from './screens/Settings'
 import { isSupabaseConfigured, supabase } from './lib/supabase'
+import { syncAccount } from './lib/sync'
+import { KEYS, useRaw, useStoredJson } from './lib/store'
+import { getProfile } from './lib/repo'
+import { SessionContext } from './lib/session'
+import './i18n'
+import './styles/app.css'
+
+const EMPTY = Object.freeze({})
 
 const App = () => {
   const [session, setSession] = useState(undefined)
-  const [hasCompletedOnboarding, setHasCompletedOnboarding] = useState(false)
+  const [sync, setSync] = useState({ status: 'idle', message: '' })
+  const [splashDone, setSplashDone] = useState(false)
+  const onSplashDone = useCallback(() => setSplashDone(true), [])
+
+  // Motion is controlled only by the in-app switch, never by the OS setting.
+  const motionRaw = useRaw(KEYS.motion)
+  const motionOn = motionRaw !== 'off'
+  const profile = { ...getProfile(), ...useStoredJson(KEYS.profile, EMPTY) }
 
   useEffect(() => {
-    if (!isSupabaseConfigured) return undefined
+    document.documentElement.classList.toggle('motion-off', !motionOn)
+  }, [motionOn])
 
-    let isMounted = true
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, nextSession) => {
-      if (isMounted) setSession(nextSession)
+  useEffect(() => {
+    document.documentElement.dataset.font = profile.fontSize || 'medium'
+  }, [profile.fontSize])
+
+  useEffect(() => {
+    if (!isSupabaseConfigured || !supabase) {
+      setSession(null)
+      return undefined
+    }
+    let mounted = true
+    const { data } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      if (mounted) setSession(nextSession)
     })
-
     supabase.auth
       .getSession()
-      .then(({ data, error }) => {
+      .then(({ data: result, error }) => {
         if (error) throw error
-        if (isMounted) setSession(data.session)
+        if (mounted) setSession(result.session)
       })
-      .catch((error) => {
-        console.error('Unable to restore the Supabase session:', error)
-        if (isMounted) setSession(null)
+      .catch(() => {
+        if (mounted) setSession(null)
       })
-
     return () => {
-      isMounted = false
-      subscription.unsubscribe()
+      mounted = false
+      data.subscription.unsubscribe()
     }
   }, [])
 
-  if (!isSupabaseConfigured) {
-    return (
-      <main className="configuration-message">
-        <section>
-          <h1>Connect HerCycle to Supabase</h1>
-          <p>
-            Add <code>REACT_APP_SUPABASE_URL</code> and{' '}
-            <code>REACT_APP_SUPABASE_KEY</code> (or <code>REACT_APP_SUPABASE_ANON_KEY</code>) to your environment, then restart
-            the app. See <code>.env.example</code> for the required names.
-          </p>
-        </section>
-      </main>
-    )
-  }
+  const userId = session?.user?.id
+  useEffect(() => {
+    if (!userId) {
+      setSync({ status: 'idle', message: '' })
+      return undefined
+    }
+    let mounted = true
+    setSync({ status: 'syncing', message: '' })
+    syncAccount(userId)
+      .then((result) => {
+        if (mounted) setSync({ status: 'done', message: '', ...result })
+      })
+      .catch((error) => {
+        if (mounted) setSync({ status: 'error', message: error.message })
+      })
+    return () => {
+      mounted = false
+    }
+  }, [userId])
 
-  if (session === undefined) {
-    return (
-      <main className="configuration-message" aria-live="polite">
-        <p>Loading your HerCycle session…</p>
-      </main>
-    )
-  }
+  const sessionValue = useMemo(() => ({ session: session ?? null, sync }), [session, sync])
+  const onboarded = Boolean(profile.onboarded)
+  const ready = session !== undefined
 
   return (
-    <BrowserRouter>
-      <Routes>
-        <Route
-          path="/"
-          element={
-            session || hasCompletedOnboarding ? (
-              <Home />
-            ) : (
-              <Navigate to="/onboarding" replace />
-            )
-          }
-        />
-        <Route
-          path="/onboarding"
-          element={
-            session || hasCompletedOnboarding ? (
-              <Navigate to="/" replace />
-            ) : (
-              <Onboarding
-                session={session}
-                onComplete={() => setHasCompletedOnboarding(true)}
-              />
-            )
-          }
-        />
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
-    </BrowserRouter>
+    <MotionConfig reducedMotion="never" transition={motionOn ? undefined : { duration: 0 }}>
+      <SessionContext.Provider value={sessionValue}>
+        <BrowserRouter>
+          <Routes>
+            <Route path="/onboarding" element={onboarded ? <Navigate to="/" replace /> : <Onboarding />} />
+            <Route element={onboarded ? <Shell /> : <Navigate to="/onboarding" replace />}>
+              <Route index element={<Today />} />
+              <Route path="check-in" element={<CheckIn />} />
+              <Route path="intimacy" element={<Intimacy />} />
+              <Route path="journey" element={<Journey />} />
+              <Route path="insights" element={<Insights />} />
+              <Route path="settings" element={<Settings />} />
+            </Route>
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </BrowserRouter>
+      </SessionContext.Provider>
+      <AnimatePresence>{!splashDone && <Splash key="splash" ready={ready} onDone={onSplashDone} />}</AnimatePresence>
+    </MotionConfig>
   )
 }
 

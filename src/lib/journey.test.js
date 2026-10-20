@@ -1,4 +1,22 @@
-import { LESSON_IDS, lessonsCompleted, nextStageFor, ringProgress, scoreQuiz, stageFor } from './journey'
+import { LESSON_IDS, eligibleMilestones, lessonsCompleted, nextStageFor, ringProgress, scoreQuiz, stageFor } from './journey'
+
+describe('eligibleMilestones', () => {
+  test('rewards logging and reflecting, not cycle or body outcomes', () => {
+    expect(eligibleMilestones({ checkinDays: 1 })).toEqual(['first_checkin'])
+    expect(eligibleMilestones({ checkinDays: 5 })).toEqual(['first_checkin', 'five_check_ins'])
+    expect(eligibleMilestones({ hasReflection: true })).toEqual(['first_reflection'])
+  })
+
+  test('learning milestone needs every lesson, not just one', () => {
+    expect(eligibleMilestones({ lessonsDone: 1 })).toContain('first_lesson')
+    expect(eligibleMilestones({ lessonsDone: 1 })).not.toContain('learning_milestone')
+    expect(eligibleMilestones({ lessonsDone: LESSON_IDS.length })).toContain('learning_milestone')
+  })
+
+  test('nothing is awarded for an empty state', () => {
+    expect(eligibleMilestones({})).toEqual([])
+  })
+})
 
 describe('garden stages only move forward', () => {
   test('a new journey starts as a seedbed', () => {

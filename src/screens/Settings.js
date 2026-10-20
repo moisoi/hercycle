@@ -1,334 +1,203 @@
-import React, { useState, useEffect } from 'react'
-import { Card, CardContent, CardHeader, Typography, Switch, Slider } from '@mui/material'
-import { FaMoon, FaSun, FaLeaf, FaHeart } from 'react-icons/fa'
-import { motion } from 'framer-motion'
+import React, { useState } from 'react'
+import { useTranslation } from 'react-i18next'
+import { useNavigate } from 'react-router-dom'
+import { LuDownload, LuTrash2, LuShieldCheck, LuBellRing } from 'react-icons/lu'
 
-import { colors, typography } from '../styles'
-import { supabase } from '../lib/supabase'
+import AuthPanel from '../components/AuthPanel'
+import { SaveButton, Slider, Switch } from '../components/Controls'
+import { celebrate } from '../lib/celebrate'
+import { normalizeCycleLength, normalizePeriodLength, toDateKey } from '../lib/cycle'
+import { DEFAULT_PREFS, getProfile, savePrefs, saveProfile, setMotion } from '../lib/repo'
+import { KEYS, writeRaw, readRaw, useRaw, useStoredJson } from '../lib/store'
+import { useSession } from '../lib/session'
+import { pushProfile } from '../lib/sync'
 
+const EMPTY = Object.freeze({})
+const SIZES = ['small', 'medium', 'large']
+const TONES = ['playful', 'balanced', 'serious']
+
+const exportData = () => {
+  const payload = {
+    exportedAt: new Date().toISOString(),
+    note: 'Your HerCycle data. Keep this file private.',
+    profile: JSON.parse(readRaw(KEYS.profile) || 'null'),
+    checkins: JSON.parse(readRaw(KEYS.checkins) || '{}'),
+    intimacy: JSON.parse(readRaw(KEYS.intimacy) || '{}'),
+    journey: JSON.parse(readRaw(KEYS.journey) || 'null'),
+    preferences: JSON.parse(readRaw(KEYS.prefs) || 'null'),
+  }
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = `hercycle-export-${toDateKey(new Date())}.json`
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000)
+}
+
+/** Settings. Every control is wired: toggles apply at once, and cycle details are saved with the button. */
 const Settings = () => {
-  const [session, setSession] = useState(null)
-  const [themeMode, setThemeMode] = useState('light')
-  const [fontSize, setFontSize] = useState('medium')
-  const [notifications, setNotifications] = useState(true)
-  const [privacyMode, setPrivacyMode] = useState(false)
-  const [hideIntimacy, setHideIntimacy] = useState(false)
+  const { t } = useTranslation()
+  const navigate = useNavigate()
+  const { session, sync } = useSession()
+  const stored = useStoredJson(KEYS.profile, EMPTY)
+  const profile = { ...getProfile(), ...stored }
+  const prefs = { ...DEFAULT_PREFS, ...useStoredJson(KEYS.prefs, EMPTY) }
+  const motionOn = useRaw(KEYS.motion) !== 'off'
+  const [confirmDelete, setConfirmDelete] = useState(false)
 
-  // Initialize session
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session)
+  const [lastPeriodStart, setLastPeriodStart] = useState(profile.lastPeriodStart || '')
+  const [cycleLength, setCycleLength] = useState(normalizeCycleLength(profile.cycleLength))
+  const [periodLength, setPeriodLength] = useState(normalizePeriodLength(profile.periodLength))
+  const [tone, setTone] = useState(profile.tone || 'balanced')
+  const [fontSize, setFontSize] = useState(profile.fontSize || 'medium')
+
+  const today = toDateKey(new Date())
+  const dateInvalid = lastPeriodStart > today
+
+  const savePreferences = async () => {
+    if (dateInvalid) throw new Error(t('settings.dateFuture'))
+    const next = saveProfile({
+      lastPeriodStart: lastPeriodStart || null,
+      cycleLength,
+      periodLength,
+      tone,
+      fontSize,
     })
-  }, [])
-
-  // Load user settings from Supabase on session establishment
-  useEffect(() => {
-    if (!session?.user?.id) return
-
-    ;(async () => {
-      const { data, error } = await supabase
-        .from('user_settings')
-        .select('*')
-        .eq('user_id', session.user.id)
-        .maybeSingle()
-
-      if (!error && data) {
-        setThemeMode(data.theme_preference || 'light')
-        setFontSize(data.font_size || 'medium')
-        setNotifications(true) // Default, could be stored separately
-        setPrivacyMode(data.privacy_mode || false)
-        setHideIntimacy(data.hide_intimacy || false)
+    if (session?.user?.id) {
+      try {
+        await pushProfile(session.user.id, next)
+      } catch (failure) {
+        throw new Error(t('settings.syncFailed', { message: failure.message }))
       }
-    })()
-  }, [session?.user?.id])
-
-  // Save user settings to Supabase
-  const saveSettings = async () => {
-    if (!session?.user?.id) return
-
-    try {
-      const { error } = await supabase.from('user_settings').upsert({
-        user_id: session.user.id,
-        theme_preference: themeMode,
-        font_size: fontSize,
-        privacy_mode: privacyMode,
-        hide_intimacy: hideIntimacy,
-        updated_at: new Date().toISOString(),
-      })
-
-      if (error) throw error
-      console.log('Settings saved to Supabase!')
-    } catch (err) {
-      console.error('Error saving settings:', err)
     }
+    celebrate('burst', { x: window.innerWidth / 2, y: window.innerHeight / 3, pattern: 'sparkle', count: 14 })
   }
 
-  const handleThemeChange = (value) => {
-    setThemeMode(value)
-    // Apply to document
-    if (value === 'dark') {
-      document.documentElement.setAttribute('data-theme', 'dark')
-    } else if (value === 'light') {
-      document.documentElement.removeAttribute('data-theme')
-    } else {
-      document.documentElement.setAttribute('data-theme', 'system')
-    }
+  const setMotionSwitch = (on) => {
+    setMotion(on)
+    // Confirm the change when the user turns motion back on.
+    if (on) celebrate('burst', { x: window.innerWidth / 2, y: window.innerHeight / 3, pattern: 'sparkle', count: 14 })
   }
 
-  const handleFontSizeChange = (value) => {
-    setFontSize(value)
-    // Apply font size
-    const fontMap = { small: '12px', medium: '14px', large: '16px' }
-    document.documentElement.style.fontSize = fontMap[value] || '14px'
+  const deleteEverything = () => {
+    ;[KEYS.profile, KEYS.checkins, KEYS.intimacy, KEYS.journey, KEYS.prefs].forEach((key) => writeRaw(key, null))
+    navigate('/onboarding', { replace: true })
   }
 
-  const handleNotificationsChange = (e) => {
-    setNotifications(e.target.checked)
-    // Could save to Supabase too
-  }
-
-  const handlePrivacyMode = (e) => {
-    setPrivacyMode(e.target.checked)
-    saveSettings()
-  }
-
-  const handleHideIntimacy = (e) => {
-    setHideIntimacy(e.target.checked)
-    saveSettings()
-  }
+  const syncNote =
+    sync.status === 'syncing'
+      ? t('settings.syncing')
+      : sync.status === 'done'
+        ? t('settings.syncDone', { imported: (sync.importedCheckins || 0) + (sync.importedIntimacy || 0) })
+        : sync.status === 'error'
+          ? t('settings.syncFailed', { message: sync.message })
+          : ''
 
   return (
-    <div style={{ minHeight: '100vh', background: colors.background, color: colors.onyx }}>
-      <motion.div
-        initial="hidden"
-        animate="visible"
-        exit="hidden"
-        transition={{ type: "spring", stiffness: 150 }}
-      >
-        <Card style={{
-          margin: '24px',
-          borderRadius: '20px',
-          ...colors.shadows.soft,
-        }}>
-          <CardHeader>
-            <Typography variant="h5" style={{ color: colors.onyx }}>
-              {t('settings')}
-            </Typography>
-          </CardHeader>
-          <CardContent>
+    <div className="section-gap">
+      <header>
+        <p className="card-kicker">{t('settings.kicker')}</p>
+        <h1 className="hero-title" style={{ fontSize: 'clamp(1.9rem, 5vw, 2.5rem)', marginTop: 6 }}>{t('settings.title')}</h1>
+        <p className="muted" style={{ marginTop: 6 }}>{t('settings.intro')}</p>
+      </header>
 
-            {/* Theme Mode */}
-            <div style={{ mb: '20px' }}>
-              <Typography variant="h6" style={{ color: colors.onyx, marginBottom: '8px' }}>
-                {t('appearance')}
-              </Typography>
-              {themeOptions.map((option) => (
-                <motion.div
-                  key={option.key}
-                  whileHover={{ scale: 1.02 }}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '12px',
-                    padding: '12px',
-                    borderRadius: '12px',
-                    background: themeMode === option.key ? colors.primary + '20' : colors.surface,
-                    border: `1px solid ${themeMode === option.key ? colors.primary : colors.muted}`,
-                    marginBottom: '6px',
-                    cursor: 'pointer',
-                    transition: colors.transitions.fast,
-                  }}
-                  onClick={() => { handleThemeChange(option.key); saveSettings() }}
-                >
-                  <span style={{ color: themeMode === option.key ? colors.primary : colors.muted }}>
-                    {t(option.label)}
-                  </span>
-                  <span style={{ color: colors.muted, fontSize: typography.size.xs }}>
-                    {t(option.description)}
-                  </span>
-                </motion.div>
-              ))}
-            </div>
+      <section className="card stack" aria-labelledby="account-title">
+        <h2 id="account-title" style={{ fontSize: '1.2rem' }}>{t('settings.accountTitle')}</h2>
+        <AuthPanel session={session} />
+        {syncNote && (
+          <div className={`notice ${sync.status === 'error' ? 'warn' : 'info'}`} role="status">
+            {syncNote}
+          </div>
+        )}
+        {!session?.user && <p className="muted" style={{ fontSize: '0.9rem' }}>{t('settings.guestNote')}</p>}
+      </section>
 
-            {/* Font Size */}
-            <div style={{ mb: '20px' }}>
-              <Typography variant="h6" style={{ color: colors.onyx, marginBottom: '8px' }}>
-                {t('fontSize')}
-              </Typography>
-              {fontSizeOptions.map((option) => (
-                <motion.div
-                  key={option.key}
-                  whileHover={{ scale: 1.02 }}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '12px',
-                    padding: '12px',
-                    borderRadius: '12px',
-                    background: fontSize === option.key ? colors.primary + '20' : colors.surface,
-                    border: `1px solid ${fontSize === option.key ? colors.primary : colors.muted}`,
-                    marginBottom: '6px',
-                    cursor: 'pointer',
-                    transition: colors.transitions.fast,
-                  }}
-                  onClick={() => { handleFontSizeChange(option.key); saveSettings() }}
-                >
-                  <span style={{ color: fontSize === option.key ? colors.primary : colors.muted }}>
-                    {t(option.label)}
-                  </span>
-                  <span style={{ color: colors.muted, fontSize: typography.size.xs }}>
-                    {t(option.description)}
-                  </span>
-                </motion.div>
-              ))}
-            </div>
+      <section className="card stack" aria-labelledby="cycle-title">
+        <h2 id="cycle-title" style={{ fontSize: '1.2rem' }}>{t('settings.cycleTitle')}</h2>
+        <label className="field">
+          <span>{t('onboarding.lastPeriod')}</span>
+          <input className="input" type="date" max={today} value={lastPeriodStart} onChange={(event) => setLastPeriodStart(event.target.value)} aria-invalid={dateInvalid} />
+          <small className={dateInvalid ? 'field-error' : ''}>{dateInvalid ? t('settings.dateFuture') : t('settings.dateHelp')}</small>
+        </label>
+        <Slider id="set-cycle" label={t('onboarding.cycleLength')} value={cycleLength} min={21} max={40} unit={t('units.days')} onChange={setCycleLength} tint="var(--berry)" lowLabel="21" highLabel="40" pattern="sparkle" />
+        <Slider id="set-period" label={t('onboarding.periodLength')} value={periodLength} min={2} max={10} unit={t('units.days')} onChange={setPeriodLength} tint="#c15b70" lowLabel="2" highLabel="10" pattern="drop" />
 
-            {/* Notifications */}
-            <div style={{ mb: '20px' }}>
-              <Typography variant="h6" style={{ color: colors.onyx, marginBottom: '8px' }}>
-                {t('notifications')}
-              </Typography>
-              <motion.div
-                whileTap={{ scale: 0.95 }}
-                transition={{ type: "spring", stiffness: 200 }}
-              >
-                <Switch
-                  checked={notifications}
-                  onChange={handleNotificationsChange}
-                  style={{ width: 40, height: 20 }}
-                >
-                  <span style={{ top: 2, left: 2, position: 'absolute', width: 16, height: 16, borderRadius: '50', background: notifications ? colors.primary : colors.muted, transition: colors.transitions.fast }} />
-                </Switch>
-                <Typography variant="body2" style={{ marginLeft: '12px', color: colors.muted }}>
-                  {t('notificationsEnabled')}
-                </Typography>
-              </motion.div>
-            </div>
+        <div className="stack" style={{ gap: 8 }}>
+          <span className="field-label" style={{ fontWeight: 600, color: 'var(--ink-soft)' }}>{t('settings.toneLabel')}</span>
+          <div className="seg" role="group" aria-label={t('settings.toneLabel')}>
+            {TONES.map((item) => (
+              <button key={item} type="button" aria-pressed={tone === item} onClick={() => setTone(item)}>{t(`tones.${item}.title`)}</button>
+            ))}
+          </div>
+        </div>
 
-            {/* Privacy & Intimacy */}
-            <div style={{ mb: '20px' }}>
-              <Typography variant="h6" style={{ color: colors.onyx, marginBottom: '8px' }}>
-                {t('privacy')}
-              </Typography>
-              <motion.div
-                whileTap={{ scale: 0.95 }}
-                transition={{ type: "spring", stiffness: 200 }}
-              >
-                <Switch
-                  checked={privacyMode}
-                  onChange={handlePrivacyMode}
-                  style={{ width: 40, height: 20 }}
-                >
-                  <span style={{ top: 2, left: 2, position: 'absolute', width: 16, height: 16, borderRadius: '50', background: privacyMode ? colors.primary : colors.muted, transition: colors.transitions.fast }} />
-                </Switch>
-                <Typography variant="body2" style={{ marginLeft: '12px', color: colors.muted }}>
-                  {t('privacyModeDesc')}
-                </Typography>
-              </motion.div>
+        <div className="stack" style={{ gap: 8 }}>
+          <span className="field-label" style={{ fontWeight: 600, color: 'var(--ink-soft)' }}>{t('settings.fontLabel')}</span>
+          <div className="seg" role="group" aria-label={t('settings.fontLabel')}>
+            {SIZES.map((item) => (
+              <button key={item} type="button" aria-pressed={fontSize === item} onClick={() => setFontSize(item)}>{t(`settings.font.${item}`)}</button>
+            ))}
+          </div>
+        </div>
 
-              {/* Hide Intimacy Section */}
-              <motion.div
-                whileTap={{ scale: 0.95 }}
-                transition={{ type: "spring", stiffness: 200 }}
-              >
-                <Switch
-                  checked={hideIntimacy}
-                  onChange={handleHideIntimacy}
-                  style={{ width: 40, height: 20 }}
-                >
-                  <span style={{ top: 2, left: 2, position: 'absolute', width: 16, height: 16, borderRadius: '50', background: hideIntimacy ? colors.primary : colors.muted, transition: colors.transitions.fast }} />
-                </Switch>
-                <Typography variant="body2" style={{ marginLeft: '12px', color: colors.muted }}>
-                  {t('hideIntimacySection')}
-                </Typography>
-              </motion.div>
-            </div>
+        <SaveButton
+          onSave={savePreferences}
+          idleLabel={t('settings.savePreferences')}
+          savingLabel={t('settings.saving')}
+          savedLabel={t('settings.saved')}
+          savedText={session?.user ? t('settings.savedAccount') : t('settings.savedDevice')}
+          statusText={session?.user ? '' : t('settings.deviceHint')}
+          disabled={dateInvalid}
+        />
+      </section>
 
-            {/* About & Support */}
-            <div style={{ mt: '20px' }}>
-              <Typography variant="h6" style={{ color: colors.onyx, marginBottom: '8px' }}>
-                {t('about')}
-              </Typography>
-              <p style={{ color: colors.muted, lineHeight: 1.6 }}>
-                {t('appVersion', { version: '1.0.0' })}
-              </p>
-              <p style={{ color: colors.muted, lineHeight: 1.6 }}>
-                {t('contactSupport')}
-              </p>
-            </div>
+      <section className="card stack" aria-labelledby="experience-title">
+        <h2 id="experience-title" style={{ fontSize: '1.2rem' }}>{t('settings.experienceTitle')}</h2>
+        <Switch id="motion" checked={motionOn} onChange={setMotionSwitch} label={t('settings.motion')} hint={t('settings.motionHint')} />
+        <Switch id="reminders" checked={prefs.reminders} onChange={(value) => savePrefs({ reminders: value })} label={t('settings.reminders')} hint={t('settings.remindersHint')} />
+        <div className="notice info" role="note" style={{ alignItems: 'center' }}>
+          <LuBellRing aria-hidden="true" style={{ flex: 'none' }} />
+          <span>{t('settings.notificationsNote')}</span>
+        </div>
+      </section>
 
-            {/* Save Button */}
-            <motion.div
-              whileTap={{ scale: 0.95 }}
-              transition={{ type: "spring", stiffness: 200 }}
-            >
-              <Button
-                fullWidth
-                variant="contained"
-                style={{
-                  background: colors.primary,
-                  border: 'none',
-                  borderRadius: '12px',
-                  color: 'white',
-                  padding: '12px',
-                  fontWeight: typography.weight.medium,
-                  marginTop: '20px',
-                  ...colors.transitions.fast,
-                }}
-                onClick={() => saveSettings()}
-              >
-                {t('saveChanges')}
-              </Button>
-            </motion.div>
+      <section className="card stack" aria-labelledby="journey-settings-title">
+        <h2 id="journey-settings-title" style={{ fontSize: '1.2rem' }}>{t('settings.journeyTitle')}</h2>
+        <Switch id="gamification" checked={prefs.gamification} onChange={(value) => savePrefs({ gamification: value })} label={t('settings.gamification')} hint={t('settings.gamificationHint')} />
+        <Switch id="show-rewards" checked={prefs.showRewards} onChange={(value) => savePrefs({ showRewards: value })} label={t('settings.showRewards')} hint={t('settings.showRewardsHint')} />
+        <Switch id="celebrate" checked={prefs.celebrate} onChange={(value) => savePrefs({ celebrate: value })} label={t('settings.celebrate')} hint={t('settings.celebrateHint')} />
+      </section>
 
-          </CardContent>
-        </Card>
-      </motion.div>
+      <section className="card stack" aria-labelledby="privacy-title">
+        <h2 id="privacy-title" style={{ fontSize: '1.2rem' }}>
+          <LuShieldCheck aria-hidden="true" style={{ verticalAlign: '-3px', marginRight: 8 }} />
+          {t('settings.privacyTitle')}
+        </h2>
+        <Switch id="hide-intimacy" checked={prefs.hideIntimacy} onChange={(value) => savePrefs({ hideIntimacy: value })} label={t('settings.hideIntimacy')} hint={t('settings.hideIntimacyHint')} />
+        <div className="row">
+          <button type="button" className="btn ghost" onClick={exportData}>
+            <LuDownload aria-hidden="true" /> {t('settings.export')}
+          </button>
+          {!confirmDelete ? (
+            <button type="button" className="btn ghost" onClick={() => setConfirmDelete(true)}>
+              <LuTrash2 aria-hidden="true" /> {t('settings.delete')}
+            </button>
+          ) : (
+            <>
+              <button type="button" className="btn danger" onClick={deleteEverything}>{t('settings.deleteConfirm')}</button>
+              <button type="button" className="btn quiet" onClick={() => setConfirmDelete(false)}>{t('settings.cancel')}</button>
+            </>
+          )}
+        </div>
+        <p className="muted" style={{ fontSize: '0.88rem' }}>{t('settings.privacyBody')}</p>
+      </section>
+
+      <p className="muted center" style={{ fontSize: '0.84rem' }}>{t('settings.version')}</p>
     </div>
   )
 }
-
-// Helper translations - using inline for now
-const t = (key, replacements = {}) => {
-  const translations = {
-    settings: 'Settings',
-    appearance: 'Appearance',
-    fontSize: 'Font Size',
-    smallText: 'Small',
-    smallTextDesc: 'Display more content on screen',
-    mediumText: 'Medium',
-    mediumTextDesc: 'Default text size',
-    largeText: 'Large',
-    largeTextDesc: 'Easier to read',
-    notifications: 'Notifications',
-    notificationsEnabled: 'Enable notifications',
-    privacy: 'Privacy & Security',
-    privacyModeDesc: 'Hide intimacy section from main dashboard',
-    hideIntimacySection: 'Hide intimacy features',
-    about: 'About',
-    appVersion: 'HerCycle v{version}',
-    contactSupport: 'Contact support at support@hercycle.com',
-    saveChanges: 'Save Changes',
-    enablePartner: 'Enable Partner Mode',
-    disablePartner: 'Disable Partner Mode',
-    partnerModeDesc: 'Share phase and openness with your partner',
-    privacyModeDesc: 'Privacy and security settings',
-  }
-  return translations[key] || key
-}
-
-// Theme options
-const themeOptions = [
-  { key: 'light', label: 'light', description: 'Use light theme for a fresh look' },
-  { key: 'dark', label: 'dark', description: 'Use dark theme for comfortable night viewing' },
-  { key: 'system', label: 'system', description: 'Follow system setting' },
-]
-
-// Font size options
-const fontSizeOptions = [
-  { key: 'small', label: 'small', description: 'Display more content on screen' },
-  { key: 'medium', label: 'medium', description: 'Default text size' },
-  { key: 'large', label: 'large', description: 'Easier to read' },
-]
 
 export default Settings

@@ -52,6 +52,31 @@ export function ringProgress(awarded) {
   return Math.min(1, Math.max(0, (count - current.min) / span))
 }
 
+/**
+ * Which milestones the current state has earned. Awarding is idempotent in repo.awardMilestone,
+ * so calling this often is safe. Nothing here rewards cycle regularity, symptoms, fertility,
+ * or intimacy: intimacy logs are never an input.
+ */
+export function eligibleMilestones({
+  checkinDays = 0,
+  hasReflection = false,
+  intentionCount = 0,
+  lessonsDone = 0,
+  reviewedMonth = false,
+  accentChosen = false,
+} = {}) {
+  const keys = []
+  if (checkinDays >= 1) keys.push('first_checkin')
+  if (checkinDays >= 5) keys.push('five_check_ins')
+  if (hasReflection) keys.push('first_reflection')
+  if (intentionCount >= 1) keys.push('first_intention')
+  if (lessonsDone >= 1) keys.push('first_lesson')
+  if (lessonsDone >= LESSON_IDS.length) keys.push('learning_milestone')
+  if (reviewedMonth) keys.push('monthly_review')
+  if (accentChosen) keys.push('make_it_yours')
+  return keys
+}
+
 /** Counts correct answers. Retries are free, so this only reports the result for one attempt. */
 export function scoreQuiz(questions = [], answers = []) {
   const total = questions.length

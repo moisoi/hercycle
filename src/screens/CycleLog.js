@@ -1,332 +1,250 @@
-import React, { useEffect, useState } from 'react'
-import { Alert, Button } from '@mui/material'
-import { motion } from 'framer-motion'
-import { FiCheck, FiDroplet, FiShield } from 'react-icons/fi'
-import { useNavigate } from 'react-router-dom'
+import React, { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { FiCheck } from 'react-icons/fi'
 
-import { isSupabaseConfigured, supabase } from '../lib/supabase'
-import { estimatePeriodEndDate as predictedEndDate, formatPeriodDate as formatDate, localDateString as today } from '../lib/period'
+import CardBurst from '../components/CardBurst'
+import Slider from '../components/Slider'
+import { useBurst } from '../lib/celebrate'
+import { cycleDayFor, phaseFor, toDateKey, parseDateKey } from '../lib/cycle'
+import { formatDate } from '../lib/i18n'
+import { runAwards } from '../lib/awards'
+import { pushCheckin } from '../lib/sync'
+import { getCheckins, saveCheckin, saveProfile, useCheckins, useProfile } from '../lib/store'
 
-const phases = [
-  { key: 'menstrual', icon: '🌙', color: '#b95073' },
-  { key: 'follicular', icon: '🌱', color: '#53866b' },
-  { key: 'ovulatory', icon: '☀️', color: '#c57535' },
-  { key: 'luteal', icon: '🌸', color: '#7962a1' },
+const PHASES = [
+  { key: 'menstrual', icon: '🌙' },
+  { key: 'follicular', icon: '🌱' },
+  { key: 'ovulatory', icon: '☀️' },
+  { key: 'luteal', icon: '🌸' },
 ]
 
-const readPendingDraft = () => {
-  if (!isSupabaseConfigured) return null
-  try {
-    return JSON.parse(window.sessionStorage.getItem('hercycle.pendingCheckIn') || 'null')
-  } catch {
-    return null
-  }
-}
+const moodWordKey = (value) => (value <= 3 ? 'low' : value >= 8 ? 'high' : 'steady')
 
-const CycleLog = ({ session }) => {
+const CycleLog = ({ session, client }) => {
   const { t } = useTranslation()
-  const navigate = useNavigate()
-  const [initialDraft] = useState(readPendingDraft)
-  const [phase, setPhase] = useState(initialDraft?.phase || 'menstrual')
-  const [mood, setMood] = useState(initialDraft?.mood || 5)
-  const [energy, setEnergy] = useState(initialDraft?.energy || 5)
-  const [libido, setLibido] = useState(initialDraft?.libido ?? null)
-  const [period, setPeriod] = useState(Boolean(initialDraft?.period))
-  const [date, setDate] = useState(initialDraft?.date || today())
-  const [periodStartDate, setPeriodStartDate] = useState(initialDraft?.period_start_date || initialDraft?.periodStartDate || initialDraft?.date || today())
-  const [periodDurationDays, setPeriodDurationDays] = useState(Number(initialDraft?.period_duration_days || initialDraft?.periodDurationDays) || 5)
-  const [saveState, setSaveState] = useState('idle')
-  const [saveNotice, setSaveNotice] = useState('')
-  const [isLoadingExisting, setIsLoadingExisting] = useState(Boolean(session?.user?.id))
-  const [error, setError] = useState('')
+  const profile = useProfile()
+  const checkins = useCheckins()
+  const today = toDateKey(new Date())
+  const profileRef = useRef(profile)
+  profileRef.current = profile
+  const [date, setDate] = useState(today)
+  const [phase, setPhase] = useState(null)
+  const [mood, setMood] = useState(5)
+  const [energy, setEnergy] = useState(5)
+  const [period, setPeriod] = useState(false)
+  const [periodStart, setPeriodStart] = useState(today)
+  const [periodDuration, setPeriodDuration] = useState(profile.periodLength || 5)
+  const [status, setStatus] = useState({ state: 'idle', message: '' })
+  const [dirty, setDirty] = useState(false)
+  const [burstKey, fireBurst] = useBurst()
+  const [phaseBurst, firePhaseBurst] = useBurst()
 
+  // Load the chosen day from the device cache. Runs when the day changes only, so saving the
+  // profile does not reset the form or the saved message. The profile is read through a ref.
   useEffect(() => {
-    let isMounted = true
-    const loadCheckIn = async () => {
-      if (!session?.user?.id) {
-        setIsLoadingExisting(false)
-        return
-      }
-      if (initialDraft?.date === date) {
-        setPhase(initialDraft.phase || 'menstrual')
-        setMood(Number(initialDraft.mood) || 5)
-        setEnergy(Number(initialDraft.energy) || 5)
-        setLibido(initialDraft.libido ?? null)
-        setPeriod(Boolean(initialDraft.period))
-        setPeriodStartDate(initialDraft.period_start_date || initialDraft.periodStartDate || initialDraft.date || date)
-        setPeriodDurationDays(Number(initialDraft.period_duration_days || initialDraft.periodDurationDays) || 5)
-        setIsLoadingExisting(false)
-        return
-      }
-      setIsLoadingExisting(true)
-      const { data, error: queryError } = await supabase
-        .from('cycles')
-        .select('phase, mood, energy, libido, period, period_start_date, period_duration_days')
-        .eq('user_id', session.user.id)
-        .eq('date', date)
-        .maybeSingle()
-      if (!isMounted) return
-      if (queryError) {
-        console.error('Unable to load the selected check-in:', queryError)
-      } else if (data) {
-        setPhase(data.phase || 'menstrual')
-        setMood(Number(data.mood) || 5)
-        setEnergy(Number(data.energy) || 5)
-        setLibido(data.libido ?? null)
-        setPeriod(Boolean(data.period))
-        setPeriodStartDate(data.period_start_date || date)
-        setPeriodDurationDays(Number(data.period_duration_days) || 5)
-      } else {
-        setPhase('menstrual')
-        setMood(5)
-        setEnergy(5)
-        setLibido(null)
-        setPeriod(false)
-        setPeriodStartDate(date)
-        setPeriodDurationDays(5)
-      }
-      setIsLoadingExisting(false)
-    }
-    loadCheckIn().catch((queryError) => {
-      console.error('Unable to load the selected check-in:', queryError)
-      if (isMounted) setIsLoadingExisting(false)
+    const current = profileRef.current
+    const entry = getCheckins()[date]
+    const derived = phaseFor(cycleDayFor(parseDateKey(date), current.lastPeriodStart, current.cycleLength), {
+      cycleLength: current.cycleLength,
+      periodLength: current.periodLength,
     })
-    return () => { isMounted = false }
-  }, [session?.user?.id, date, initialDraft])
+    setPhase(entry?.phase || derived || null)
+    setMood(entry?.mood ?? 5)
+    setEnergy(entry?.energy ?? 5)
+    setPeriod(Boolean(entry?.period))
+    setPeriodStart(entry?.periodStart || date)
+    setPeriodDuration(entry?.periodDuration || current.periodLength || 5)
+    setDirty(false)
+    setStatus({ state: 'idle', message: '' })
+  }, [date])
 
-  const showPeriodDetails = period
-  const estimatedPeriodEnd = showPeriodDetails ? predictedEndDate(periodStartDate, periodDurationDays) : ''
+  // When today's entry arrives from the account, refresh the form once if nothing was edited yet.
+  useEffect(() => {
+    if (dirty) return
+    const entry = checkins[date]
+    if (!entry) return
+    setPhase(entry.phase || null)
+    setMood(entry.mood ?? 5)
+    setEnergy(entry.energy ?? 5)
+    setPeriod(Boolean(entry.period))
+  }, [checkins, date, dirty])
 
-  const saveDraftAndSignIn = () => {
-    if (isSupabaseConfigured) {
-      try {
-        window.sessionStorage.setItem('hercycle.pendingCheckIn', JSON.stringify({
-          phase,
-          mood,
-          energy,
-          libido,
-          period,
-          date,
-          period_start_date: showPeriodDetails ? periodStartDate : null,
-          period_duration_days: showPeriodDetails ? Number(periodDurationDays) : null,
-        }))
-      } catch {
-        // The guest can still continue to sign in without a temporary draft.
-      }
-    }
-    navigate('/auth')
+  const edit = (apply) => {
+    apply()
+    setDirty(true)
+    setStatus((current) => (current.state === 'saved' ? { state: 'idle', message: '' } : current))
   }
 
-  const saveCheckIn = async (event) => {
+  const choosePhase = (key) => {
+    edit(() => setPhase(key))
+    firePhaseBurst('vibe')
+  }
+
+  const submit = async (event) => {
     event.preventDefault()
-    setError('')
-    setSaveNotice('')
-
-    const duration = Number(periodDurationDays)
-    if (showPeriodDetails && (!periodStartDate || periodStartDate > today() || duration < 1 || duration > 10)) {
-      setError(t('periodDetailsInvalid'))
+    if (!phase) {
+      setStatus({ state: 'error', message: t('checkIn.pickPhase') })
       return
     }
-
-    if (!session?.user?.id) {
-      setSaveState('preview')
-      setSaveNotice(t('guestCheckInNotSaved'))
-      return
-    }
-
-    setSaveState('saving')
-    try {
-      const { error: saveError } = await supabase.from('cycles').upsert(
-        {
-          user_id: session.user.id,
-          phase,
-          mood,
-          libido,
-          energy,
-          period,
-          date,
-          period_start_date: showPeriodDetails ? periodStartDate : null,
-          period_duration_days: showPeriodDetails ? duration : null,
-        },
-        { onConflict: 'user_id,date' }
-      )
-      if (saveError) throw saveError
-      setSaveState('saved')
-      try {
-        window.sessionStorage.removeItem('hercycle.pendingCheckIn')
-      } catch {
-        // The saved database record is already authoritative.
+    if (period) {
+      const startKey = parseDateKey(periodStart)
+      if (!startKey || periodStart > today || periodDuration < 1 || periodDuration > 10) {
+        setStatus({ state: 'error', message: t('checkIn.periodInvalid') })
+        return
       }
-      window.setTimeout(() => navigate('/'), 1100)
-    } catch (saveError) {
-      console.error('Unable to save check-in:', saveError)
-      setError(saveError.message || t('errorGeneric'))
-      setSaveState('idle')
     }
+
+    setStatus({ state: 'saving', message: '' })
+    const entry = {
+      phase,
+      mood,
+      energy,
+      period,
+      periodStart: period ? periodStart : null,
+      periodDuration: period ? Number(periodDuration) : null,
+    }
+    saveCheckin(date, entry)
+
+    if (period && (!profile.lastPeriodStart || periodStart > profile.lastPeriodStart)) {
+      saveProfile({ lastPeriodStart: periodStart })
+    }
+
+    setDirty(false)
+    fireBurst('progress')
+    runAwards(t)
+
+    if (session?.user?.id && client) {
+      const result = await pushCheckin(client, session.user.id, date, entry)
+      if (!result.ok) {
+        setStatus({ state: 'error', message: t('checkIn.savedDeviceOnly', { error: result.error }) })
+        return
+      }
+      setStatus({ state: 'saved', message: t('checkIn.savedAccount') })
+      return
+    }
+    setStatus({ state: 'saved', message: t('checkIn.savedDevice') })
   }
+
+  const dateLabel = formatDate(parseDateKey(date), { weekday: 'long', month: 'long', day: 'numeric' })
+  const isToday = date === today
+  const selectedPhaseLabel = phase ? t(`phase.${phase}`) : t('checkIn.notChosen')
 
   return (
-    <div className="checkin-page">
-      <motion.section className="checkin-intro" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
-        <span className="eyebrow-label">A MOMENT FOR YOU</span>
-        <h2>{t('dailyCheckIn')}</h2>
-        <p>{t('checkInDescription')}</p>
-      </motion.section>
+    <form className="page checkin-page" onSubmit={submit} noValidate>
+      <section className="card date-card">
+        <label htmlFor="checkin-date" className="field-label">{t('checkIn.dateLabel')}</label>
+        <div className="date-row">
+          <input
+            id="checkin-date"
+            type="date"
+            max={today}
+            value={date}
+            onChange={(event) => event.target.value && setDate(event.target.value)}
+          />
+          <span className="date-caption">{isToday ? t('checkIn.today') : dateLabel}</span>
+        </div>
+      </section>
 
-      <form className="checkin-form" onSubmit={saveCheckIn}>
-        <section className="form-section">
-          <div className="form-section-heading">
-            <span className="form-step-number">01</span>
-            <div><h3>{t('phaseQuestion')}</h3><p>Pick the phase that feels closest today.</p></div>
-          </div>
-          <div className="phase-choice-grid" role="radiogroup" aria-label={t('phaseQuestion')}>
-            {phases.map((item) => (
-              <motion.button
-                key={item.key}
+      <section className="card" aria-labelledby="phase-heading">
+        <h2 id="phase-heading" className="card-title">{t('checkIn.phaseHeading')}</h2>
+        <p className="card-copy">{t('checkIn.phaseCopy')}</p>
+        <div className="phase-choice-grid" role="radiogroup" aria-label={t('checkIn.phaseHeading')}>
+          {PHASES.map(({ key, icon }) => {
+            const selected = phase === key
+            return (
+              <button
+                key={key}
                 type="button"
-                className={`phase-choice-card${phase === item.key ? ' is-selected' : ''}`}
-                style={{ '--choice-color': item.color }}
                 role="radio"
-                aria-checked={phase === item.key}
-                onClick={() => { setPhase(item.key); setSaveState('idle') }}
-                whileHover={{ y: -3 }}
-                whileTap={{ scale: 0.98 }}
+                aria-checked={selected}
+                className={`phase-choice phase-${key}${selected ? ' is-selected' : ''} spot`}
+                onClick={() => choosePhase(key)}
               >
-                <span className="phase-choice-icon">{item.icon}</span>
-                <span>{t(`phase.${item.key}`)}</span>
-                {phase === item.key && <FiCheck className="phase-choice-check" aria-hidden="true" />}
-              </motion.button>
-            ))}
-          </div>
+                <span className="phase-choice-icon" aria-hidden="true">{icon}</span>
+                <strong>{t(`phase.${key}`)}</strong>
+                {selected && <FiCheck className="phase-choice-check" aria-hidden="true" />}
+                {selected && <CardBurst burstKey={phaseBurst} context={key} />}
+              </button>
+            )
+          })}
+        </div>
+        <p className="card-footnote">{t('checkIn.selectedPhase', { phase: selectedPhaseLabel })}</p>
+      </section>
 
+      <section className="card" aria-labelledby="feel-heading">
+        <h2 id="feel-heading" className="card-title">{t('checkIn.feelHeading')}</h2>
+        <Slider
+          id="checkin-mood"
+          label={t('checkIn.mood')}
+          value={mood}
+          min={1}
+          max={10}
+          tone="berry"
+          format={(value) => `${value} · ${t(`moodWord.${moodWordKey(value)}`)}`}
+          onChange={(value) => edit(() => setMood(value))}
+          hint={t('checkIn.moodHint')}
+        />
+        <Slider
+          id="checkin-energy"
+          label={t('checkIn.energy')}
+          value={energy}
+          min={1}
+          max={10}
+          tone="sage"
+          format={(value) => `${value} · ${t(`energyWord.${moodWordKey(value)}`)}`}
+          onChange={(value) => edit(() => setEnergy(value))}
+          hint={t('checkIn.energyHint')}
+        />
+      </section>
+
+      <section className="card" aria-labelledby="period-heading">
+        <div className="toggle-row">
+          <div>
+            <h2 id="period-heading" className="card-title">{t('checkIn.periodHeading')}</h2>
+            <p className="card-copy">{t('checkIn.periodCopy')}</p>
+          </div>
           <button
             type="button"
-            className={`period-toggle${period ? ' is-on' : ''}`}
-            aria-pressed={period}
-            onClick={() => { setPeriod((value) => !value); setSaveState('idle') }}
+            role="switch"
+            aria-checked={period}
+            aria-label={t('checkIn.periodHeading')}
+            className={`switch${period ? ' is-on' : ''}`}
+            onClick={() => edit(() => setPeriod((value) => !value))}
           >
-            <span className="period-toggle-icon"><FiDroplet aria-hidden="true" /></span>
-            <span><strong>{t('periodQuestion')}</strong><small>Only share what you are comfortable sharing.</small></span>
-            <span className="period-toggle-state">{period ? t('yes') : t('no')}</span>
+            <span />
           </button>
-
-          {showPeriodDetails && (
-            <div className="period-details-panel">
-              <div className="period-details-heading">
-                <span className="period-details-mark" aria-hidden="true">✿</span>
-                <div><strong>{t('periodDetailsTitle')}</strong><p>{t('periodDetailsDescription')}</p></div>
-              </div>
-              <div className="period-details-fields">
-                <label className="date-field">
-                  <span>{t('periodStartDate')}</span>
-                  <input
-                    type="date"
-                    max={today()}
-                    value={periodStartDate}
-                    onChange={(event) => { setPeriodStartDate(event.target.value); setSaveState('idle'); setSaveNotice('') }}
-                    required
-                  />
-                </label>
-                <label className="period-duration-field">
-                  <span>{t('periodDuration')}</span>
-                  <select value={periodDurationDays} onChange={(event) => { setPeriodDurationDays(Number(event.target.value)); setSaveState('idle'); setSaveNotice('') }}>
-                    {Array.from({ length: 10 }, (_, index) => index + 1).map((days) => (
-                      <option key={days} value={days}>{days} {days === 1 ? t('day') : t('days')}</option>
-                    ))}
-                  </select>
-                </label>
-              </div>
-              {estimatedPeriodEnd && (
-                <div className="period-estimate-card">
-                  <span className="period-estimate-icon"><FiDroplet aria-hidden="true" /></span>
-                  <div><span>{t('periodEstimatedLastDay')}</span><strong>{formatDate(estimatedPeriodEnd)}</strong><small>{t('periodEstimateDisclaimer')}</small></div>
-                </div>
-              )}
-            </div>
-          )}
-        </section>
-
-        <section className="form-section">
-          <div className="form-section-heading">
-            <span className="form-step-number">02</span>
-            <div><h3>How are you arriving today?</h3><p>There is no right answer. Your check-in is just for you.</p></div>
-          </div>
-          <ScaleControl
-            label={t('mood')}
-            value={mood}
-            onChange={(value) => { setMood(value); setSaveState('idle') }}
-            lowLabel={t('moodLow')}
-            highLabel={t('moodHigh')}
-          />
-          <ScaleControl
-            label={t('energy')}
-            value={energy}
-            onChange={(value) => { setEnergy(value); setSaveState('idle') }}
-            lowLabel={t('energyLow')}
-            highLabel={t('energyHigh')}
-          />
-        </section>
-
-        <section className="form-section form-section-optional">
-          <div className="form-section-heading">
-            <span className="form-step-number">03</span>
-            <div><h3>{t('desireOptional')}</h3><p>{t('desireNote')}</p></div>
-          </div>
-          <div className="optional-scale-row" role="group" aria-label={t('desireOptional')}>
-            {[['Skip', null], ['Low', 2], ['Moderate', 5], ['High', 10]].map(([label, value]) => (
-              <button
-                key={label}
-                type="button"
-                className={`scale-chip${libido === value ? ' is-selected' : ''}`}
-                onClick={() => { setLibido(value); setSaveState('idle') }}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-          <label className="date-field">
-            <span>Check-in date</span>
-            <input type="date" max={today()} value={date} onChange={(event) => { setDate(event.target.value); setSaveState('idle') }} />
-          </label>
-        </section>
-
-        {error && <Alert severity="error">{error}</Alert>}
-        {saveNotice && <Alert severity="info">{saveNotice}</Alert>}
-        {!session && (
-          <div className="sign-in-nudge">
-            <FiShield aria-hidden="true" />
-            <span>{t('guestDataNotSaved')}</span>
-            <button type="button" onClick={saveDraftAndSignIn}>{t('signInToSaveButton')}</button>
+        </div>
+        {period && (
+          <div className="period-details">
+            <label className="field">
+              <span className="field-label">{t('checkIn.periodStart')}</span>
+              <input type="date" max={today} value={periodStart} onChange={(event) => edit(() => setPeriodStart(event.target.value))} />
+            </label>
+            <Slider
+              id="checkin-period-duration"
+              label={t('checkIn.periodDuration')}
+              min={1}
+              max={10}
+              value={periodDuration}
+              tone="rose"
+              format={(value) => t('checkIn.days', { count: value })}
+              onChange={(value) => edit(() => setPeriodDuration(value))}
+            />
           </div>
         )}
-        <Button
-          fullWidth
-          type="submit"
-          variant="contained"
-          disabled={isLoadingExisting || saveState === 'saving'}
-          className="form-submit-button"
-        >
-          {saveState === 'saving' ? 'Saving your check-in…' : saveState === 'saved' ? t('checkInSaved') : saveState === 'preview' ? t('checkInPreviewReady') : session ? t('saveCheckIn') : t('previewCheckIn')}
-        </Button>
-      </form>
-    </div>
+      </section>
+
+      <div className="save-row" aria-live="polite">
+        <button type="submit" className="primary-button spot" disabled={status.state === 'saving'}>
+          {status.state === 'saving' ? t('checkIn.saving') : t('checkIn.save')}
+        </button>
+        <CardBurst burstKey={burstKey} context="progress" />
+        {status.state === 'saved' && <p className="save-state is-saved" role="status">{status.message}</p>}
+        {status.state === 'error' && <p className="save-state is-error" role="alert">{status.message}</p>}
+        {status.state === 'idle' && dirty && <p className="save-state">{t('checkIn.unsaved')}</p>}
+      </div>
+    </form>
   )
 }
-
-const ScaleControl = ({ label, value, onChange, lowLabel, highLabel }) => (
-  <div className="scale-control">
-    <div className="scale-control-top"><strong>{label}</strong><span>{value}/10</span></div>
-    <input
-      type="range"
-      min="1"
-      max="10"
-      value={value}
-      onChange={(event) => onChange(Number(event.target.value))}
-      aria-label={label}
-    />
-    <div className="scale-control-ends"><span>{lowLabel}</span><span>{highLabel}</span></div>
-  </div>
-)
 
 export default CycleLog

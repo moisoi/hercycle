@@ -1,404 +1,270 @@
-import React, { useEffect, useState } from 'react'
-import { Alert, Button } from '@mui/material'
-import { motion } from 'framer-motion'
-import { FiCheck, FiCopy, FiHeart, FiLock, FiShare2, FiShield, FiZap } from 'react-icons/fi'
-import { useNavigate } from 'react-router-dom'
+import React, { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { FiCheck, FiCopy, FiMail, FiMessageSquare, FiShare2 } from 'react-icons/fi'
 
-import { isSupabaseConfigured, supabase } from '../lib/supabase'
-import { localDateString } from '../lib/period'
+import CardBurst from '../components/CardBurst'
+import Slider from '../components/Slider'
+import { useBurst } from '../lib/celebrate'
+import { toDateKey } from '../lib/cycle'
+import { planFor, comfortBand, messageKeyFor, VIBES } from '../lib/intimacy'
+import { buildMailtoUrl, buildSmsUrl, buildWhatsAppUrl, isValidEmail, normalizeEthiopianMobile } from '../lib/partner'
+import { pushIntimacy } from '../lib/sync'
+import { saveIntimacy, useIntimacy } from '../lib/store'
 
-const signals = [
-  { key: 'green', icon: '✿' },
-  { key: 'yellow', icon: '☼' },
-  { key: 'red', icon: '♡' },
+const FEELINGS = [
+  { key: 'warm', icon: '♡' },
+  { key: 'playful', icon: '✦' },
+  { key: 'quiet', icon: '☾' },
 ]
 
-const terms = ['romantic', 'sensual', 'sexual', 'spontaneous']
-const vibes = ['tender', 'playful', 'naughty']
+const OPENNESS = [
+  { key: 'open', icon: '☀' },
+  { key: 'maybe', icon: '☁' },
+  { key: 'pause', icon: '☾' },
+]
 
-const readPendingIntimacy = () => {
-  if (!isSupabaseConfigured) return null
-  try {
-    return JSON.parse(window.sessionStorage.getItem('hercycle.pendingIntimacy') || 'null')
-  } catch {
-    return null
-  }
-}
+const CHANNELS = ['sms', 'email', 'whatsapp', 'copy']
 
-const Intimacy = ({ session }) => {
+const Intimacy = ({ session, client }) => {
   const { t } = useTranslation()
-  const navigate = useNavigate()
-  const [initialDraft] = useState(readPendingIntimacy)
-  const [signal, setSignal] = useState(initialDraft?.traffic_light || null)
-  const [comfort, setComfort] = useState(Number(initialDraft?.intimacy_level) || 0)
-  const [selectedTerms, setSelectedTerms] = useState(initialDraft?.preferred_terms || [])
-  const [desire, setDesire] = useState(initialDraft?.libido ?? null)
-  const [desireVibe, setDesireVibe] = useState(initialDraft?.desire_vibe || 'tender')
-  const [cyclePhase, setCyclePhase] = useState(null)
-  const [isLoading, setIsLoading] = useState(Boolean(session?.user?.id))
-  const [saveState, setSaveState] = useState('idle')
-  const [saveNotice, setSaveNotice] = useState('')
-  const [error, setError] = useState('')
-  const [isShareOpen, setIsShareOpen] = useState(false)
-  const [partnerMessage, setPartnerMessage] = useState(() => t('intimacyNoteTender'))
-  const [partnerPhone, setPartnerPhone] = useState('')
-  const [shareNotice, setShareNotice] = useState('')
+  const saved = useIntimacy()
+  const todayKey = toDateKey(new Date())
+  const today = saved[todayKey]
 
-  useEffect(() => {
-    let isMounted = true
-    const loadToday = async () => {
-      if (!session?.user?.id) {
-        setIsLoading(false)
-        return
-      }
+  const [feeling, setFeeling] = useState(today?.feeling || 'warm')
+  const [openness, setOpenness] = useState(today?.openness || 'maybe')
+  const [comfort, setComfort] = useState(today?.comfort ?? 5)
+  const [vibe, setVibe] = useState(today?.vibe || 'tender')
+  const [message, setMessage] = useState(null)
+  const [channel, setChannel] = useState('sms')
+  const [phone, setPhone] = useState('')
+  const [email, setEmail] = useState('')
+  const [composerError, setComposerError] = useState('')
+  const [copyState, setCopyState] = useState('')
+  const [saveState, setSaveState] = useState({ state: 'idle', message: '' })
+  const [vibeBurst, fireVibe] = useBurst()
 
-      const [intimacyResult, phaseResult] = await Promise.all([
-        supabase
-          .from('intimacy_logs')
-          .select('libido, intimacy_level, traffic_light, preferred_terms, desire_vibe')
-          .eq('user_id', session.user.id)
-          .eq('date', localDateString())
-          .maybeSingle(),
-        supabase
-          .from('cycles')
-          .select('phase, date')
-          .eq('user_id', session.user.id)
-          .lte('date', localDateString())
-          .order('date', { ascending: false })
-          .limit(1),
-      ])
+  const plan = useMemo(() => planFor({ openness, comfort, vibe }), [openness, comfort, vibe])
+  const suggestedMessage = t(`intimacy.messages.${messageKeyFor(plan)}`)
+  const composed = message ?? suggestedMessage
+  const ideas = t(`intimacy.ideas.${plan.ideaSet}`, { returnObjects: true })
+  const ideaList = (Array.isArray(ideas) ? ideas : []).slice(0, plan.ideaCount)
+  const bandCopy = t(`intimacy.comfortBand.${comfortBand(comfort)}`)
 
-      if (!isMounted) return
-      if (intimacyResult.error) {
-        setError(intimacyResult.error.message || t('errorGeneric'))
-      } else if (intimacyResult.data) {
-        const data = intimacyResult.data
-        setDesire(data.libido ?? null)
-        setComfort(data.intimacy_level ?? 0)
-        setSignal(data.traffic_light || null)
-        setSelectedTerms(data.preferred_terms || [])
-        setDesireVibe(vibes.includes(data.desire_vibe) ? data.desire_vibe : 'tender')
-        setPartnerMessage(t(`intimacyNote${capitalize(vibes.includes(data.desire_vibe) ? data.desire_vibe : 'tender')}`))
-      }
-      if (!phaseResult.error) setCyclePhase(phaseResult.data?.[0]?.phase || null)
-      setIsLoading(false)
-    }
-
-    loadToday().catch((queryError) => {
-      if (isMounted) {
-        setError(queryError.message || t('errorGeneric'))
-        setIsLoading(false)
-      }
-    })
-    return () => { isMounted = false }
-  }, [session?.user?.id, t])
-
-  const updateVibe = (nextVibe) => {
-    setDesireVibe(nextVibe)
-    setPartnerMessage(t(`intimacyNote${capitalize(nextVibe)}`))
-    setShareNotice('')
-    setSaveNotice('')
-    setSaveState('idle')
+  const pickVibe = (next) => {
+    setVibe(next)
+    setMessage(null)
+    setSaveState({ state: 'idle', message: '' })
+    fireVibe('vibe')
   }
 
-  const toggleTerm = (term) => {
-    setSaveState('idle')
-    setSaveNotice('')
-    setSelectedTerms((current) => current.includes(term)
-      ? current.filter((item) => item !== term)
-      : [...current, term])
+  // "Surprise me" changes only the vibe. Feeling, openness, comfort, and the message draft stay put.
+  const surprise = () => {
+    const others = VIBES.filter((item) => item !== vibe)
+    pickVibe(others[Math.floor(Math.random() * others.length)])
   }
 
-  const saveReflection = async (event) => {
-    event.preventDefault()
-    setError('')
-    setSaveNotice('')
-
-    if (!session?.user?.id) {
-      setSaveState('preview')
-      setSaveNotice(t('intimacyGuestPreview'))
+  const saveToday = async () => {
+    const entry = { feeling, openness, comfort, vibe }
+    saveIntimacy(todayKey, entry)
+    if (session?.user?.id && client) {
+      setSaveState({ state: 'saving', message: '' })
+      const result = await pushIntimacy(client, session.user.id, todayKey, entry)
+      setSaveState(result.ok
+        ? { state: 'saved', message: t('intimacy.savedAccount') }
+        : { state: 'error', message: t('intimacy.savedDeviceOnly', { error: result.error }) })
       return
     }
-
-    setSaveState('saving')
-    try {
-      const { error: saveError } = await supabase.from('intimacy_logs').upsert({
-        user_id: session.user.id,
-        libido: desire,
-        intimacy_level: comfort,
-        traffic_light: signal,
-        preferred_terms: selectedTerms,
-        desire_vibe: desireVibe,
-        date: localDateString(),
-      }, { onConflict: 'user_id,date' })
-      if (saveError) throw saveError
-      setSaveState('saved')
-      try {
-        window.sessionStorage.removeItem('hercycle.pendingIntimacy')
-      } catch {
-        // The saved database row is authoritative.
-      }
-    } catch (saveError) {
-      console.error('Unable to save private reflection:', saveError)
-      setError(saveError.message || t('errorGeneric'))
-      setSaveState('idle')
-    }
+    setSaveState({ state: 'saved', message: t('intimacy.savedDevice') })
   }
 
-  const signInToSave = () => {
-    if (isSupabaseConfigured) {
-      try {
-        window.sessionStorage.setItem('hercycle.pendingIntimacy', JSON.stringify({
-          libido: desire,
-          intimacy_level: comfort,
-          traffic_light: signal,
-          preferred_terms: selectedTerms,
-          desire_vibe: desireVibe,
-        }))
-      } catch {
-        // Continue to sign-in without a temporary draft if storage is unavailable.
-      }
-    }
-    navigate('/auth')
-  }
-
-  const copyMessage = async () => {
-    const text = partnerMessage.trim()
-    if (!text) return
-    try {
-      if (navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(text)
-      } else {
-        const copyField = document.createElement('textarea')
-        copyField.value = text
-        copyField.setAttribute('readonly', '')
-        copyField.style.position = 'fixed'
-        copyField.style.opacity = '0'
-        document.body.appendChild(copyField)
-        copyField.select()
-        const copied = document.execCommand('copy')
-        copyField.remove()
-        if (!copied) throw new Error('Clipboard unavailable')
-      }
-      setShareNotice(t('intimacyMessageCopied'))
-    } catch {
-      setShareNotice(t('intimacyCopyUnavailable'))
-    }
-  }
-
-  const shareWithPartner = async () => {
-    const text = partnerMessage.trim()
-    if (!text) return
-    setShareNotice('')
-
-    try {
-      if (partnerPhone.trim()) {
-        const phone = partnerPhone.replace(/[^\d+]/g, '')
-        if (!/^\+?\d{5,15}$/.test(phone)) {
-          setShareNotice(t('intimacyPhoneInvalid'))
-          return
-        }
-        window.location.href = `sms:${encodeURIComponent(phone)}?body=${encodeURIComponent(text)}`
-        setShareNotice(t('intimacySmsReady'))
+  // Each send is a handoff: it opens the user's own app, where they press send. Nothing is sent by HerCycle.
+  const handoff = (event) => {
+    event.preventDefault()
+    setComposerError('')
+    if (channel === 'copy') return
+    if (channel === 'email') {
+      if (!isValidEmail(email)) {
+        setComposerError(t('intimacy.errors.email'))
         return
       }
+      window.location.href = buildMailtoUrl(email, t('intimacy.emailSubject'), composed)
+      return
+    }
+    const check = normalizeEthiopianMobile(phone)
+    if (!check.valid) {
+      setComposerError(t(check.error === 'local' ? 'intimacy.errors.localNumber' : 'intimacy.errors.phoneFormat'))
+      return
+    }
+    if (channel === 'sms') {
+      window.location.href = buildSmsUrl(phone, composed)
+      return
+    }
+    window.open(buildWhatsAppUrl(phone, composed), '_blank', 'noopener,noreferrer')
+  }
 
+  const copyOrShare = async () => {
+    setCopyState('')
+    try {
       if (navigator.share) {
-        await navigator.share({ title: t('intimacyShareTitle'), text })
-        setShareNotice(t('intimacyShareReady'))
+        await navigator.share({ text: composed, title: t('intimacy.emailSubject') })
+        setCopyState(t('intimacy.sharedDone'))
         return
       }
-
-      await copyMessage()
-    } catch (shareError) {
-      if (shareError?.name !== 'AbortError') setShareNotice(t('intimacyShareUnavailable'))
+      await navigator.clipboard.writeText(composed)
+      setCopyState(t('intimacy.copiedDone'))
+    } catch {
+      setCopyState(t('intimacy.copyFailed'))
     }
   }
-
-  const extraFlirty = desire !== null && Number(desire) >= 8
 
   return (
-    <div className="intimacy-page">
-      <motion.section className="intimacy-privacy-card" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
-        <div className="intimacy-privacy-icon"><FiLock aria-hidden="true" /></div>
-        <div>
-          <span className="eyebrow-label">{t('intimacyEyebrow')}</span>
-          <h2>{t('intimacyTitle')}</h2>
-          <p>{t('intimacyDescription')}</p>
+    <div className={`page intimacy-page feeling-${feeling}`} style={{ '--comfort': comfort / 10 }}>
+      <section className="intimacy-hero aura spot" aria-live="polite">
+        <span className="eyebrow-label">{t('intimacy.kicker')}</span>
+        <h2>{t(`intimacy.headline.${openness}`)}</h2>
+        <p>{t(`intimacy.feeling.${feeling}.copy`)}</p>
+        <div className={`feeling-stage stage-${feeling}`} aria-hidden="true">
+          <span /><span /><span /><span /><span />
         </div>
-        <span className="intimacy-privacy-badge"><FiShield aria-hidden="true" /> {t('intimacyPrivateBadge')}</span>
-      </motion.section>
+      </section>
 
-      {cyclePhase ? (
-        <section className="intimacy-cycle-context">
-          <span className="intimacy-cycle-context-icon" aria-hidden="true"><FiZap /></span>
-          <p>{t('intimacyCycleContext', { phase: t(`phase.${cyclePhase}`) })}</p>
-        </section>
-      ) : (
-        <section className="intimacy-cycle-context">
-          <span className="intimacy-cycle-context-icon" aria-hidden="true"><FiZap /></span>
-          <p>{t('intimacyCycleNoContext')}</p>
-        </section>
-      )}
+      <section className="card" aria-labelledby="feeling-heading">
+        <h3 id="feeling-heading" className="card-title">{t('intimacy.feelingHeading')}</h3>
+        <div className="feeling-grid" role="radiogroup" aria-label={t('intimacy.feelingHeading')}>
+          {FEELINGS.map(({ key, icon }) => (
+            <button
+              key={key}
+              type="button"
+              role="radio"
+              aria-checked={feeling === key}
+              className={`feeling-card feeling-${key}${feeling === key ? ' is-selected' : ''} spot`}
+              onClick={() => { setFeeling(key); setSaveState({ state: 'idle', message: '' }) }}
+            >
+              <span className={`feeling-icon feeling-icon-${key}`} aria-hidden="true">{icon}</span>
+              <strong>{t(`intimacy.feeling.${key}.title`)}</strong>
+              <small>{t(`intimacy.feeling.${key}.short`)}</small>
+              {feeling === key && <FiCheck className="feeling-check" aria-hidden="true" />}
+            </button>
+          ))}
+        </div>
+      </section>
 
-      <form className="intimacy-form" onSubmit={saveReflection}>
-        <section className="intimacy-section">
-          <div className="intimacy-section-heading">
-            <span className="form-step-number">01</span>
-            <div><h3>{t('consentSignal')}</h3><p>{t('intimacySignalDescription')}</p></div>
-          </div>
-          <div className="consent-signal-grid" role="radiogroup" aria-label={t('consentSignal')}>
-            {signals.map((item) => (
-              <motion.button
-                key={item.key}
-                type="button"
-                className={`consent-signal-card consent-signal-${item.key}${signal === item.key ? ' is-selected' : ''}`}
-                role="radio"
-                aria-checked={signal === item.key}
-                onClick={() => { setSignal(item.key); setSaveState('idle'); setSaveNotice('') }}
-                whileHover={{ y: -3 }}
-                whileTap={{ scale: 0.98 }}
-              >
-                <span className="consent-signal-symbol" aria-hidden="true">{item.icon}</span>
-                <span>{t(item.key)}</span>
-              </motion.button>
-            ))}
-          </div>
-          {signal && <motion.p className="consent-reflection" key={signal} initial={{ opacity: 0 }} animate={{ opacity: 1 }}>{t(`intimacySignal_${signal}`)}</motion.p>}
-        </section>
+      <section className="card" aria-labelledby="openness-heading">
+        <h3 id="openness-heading" className="card-title">{t('intimacy.opennessHeading')}</h3>
+        <p className="card-copy">{t('intimacy.opennessCopy')}</p>
+        <div className="openness-row" role="radiogroup" aria-label={t('intimacy.opennessHeading')}>
+          {OPENNESS.map(({ key, icon }) => (
+            <button
+              key={key}
+              type="button"
+              role="radio"
+              aria-checked={openness === key}
+              className={`openness-option openness-${key}${openness === key ? ' is-selected' : ''} spot`}
+              onClick={() => { setOpenness(key); setMessage(null); setSaveState({ state: 'idle', message: '' }) }}
+            >
+              <span aria-hidden="true">{icon}</span>
+              <strong>{t(`intimacy.openness.${key}`)}</strong>
+            </button>
+          ))}
+        </div>
+        <Slider
+          id="intimacy-comfort"
+          label={t('intimacy.comfortLabel')}
+          min={0}
+          max={10}
+          value={comfort}
+          tone="rose"
+          format={() => bandCopy}
+          hint={t('intimacy.comfortHint')}
+          onChange={(value) => { setComfort(value); setSaveState({ state: 'idle', message: '' }) }}
+        />
+      </section>
 
-        <section className="intimacy-section">
-          <div className="intimacy-section-heading">
-            <span className="form-step-number">02</span>
-            <div><h3>{t('intimacyLevel')}</h3><p>{t('intimacyComfortDescription')}</p></div>
-          </div>
-          <div className="comfort-scale" role="radiogroup" aria-label={t('intimacyLevel')}>
-            {[0, 1, 2, 3, 4, 5].map((value) => (
-              <button
-                key={value}
-                type="button"
-                className={`comfort-scale-button${comfort === value ? ' is-selected' : ''}`}
-                role="radio"
-                aria-checked={comfort === value}
-                aria-label={value === 0 ? t('skip') : t('comfortLevelValue', { value })}
-                onClick={() => { setComfort(value); setSaveState('idle'); setSaveNotice('') }}
-              >
-                {value === 0 ? t('skip') : value}
-              </button>
-            ))}
-          </div>
-        </section>
+      <section className="card vibe-card" aria-labelledby="vibe-heading">
+        <div className="vibe-head">
+          <h3 id="vibe-heading" className="card-title">{t('intimacy.vibeHeading')}</h3>
+          <button type="button" className="ghost-button spot" onClick={surprise}>{t('intimacy.surprise')}</button>
+        </div>
+        <div className="vibe-grid" role="radiogroup" aria-label={t('intimacy.vibeHeading')}>
+          {VIBES.map((key) => (
+            <button
+              key={key}
+              type="button"
+              role="radio"
+              aria-checked={vibe === key}
+              className={`vibe-option vibe-${key}${vibe === key ? ' is-selected' : ''} spot`}
+              onClick={() => pickVibe(key)}
+            >
+              <strong>{t(`intimacy.vibe.${key}.title`)}</strong>
+              <small>{t(`intimacy.vibe.${key}.copy`)}</small>
+              {vibe === key && <CardBurst burstKey={vibeBurst} context={`${feeling}-${key}`} />}
+            </button>
+          ))}
+        </div>
+        <ul className="idea-list" aria-label={t('intimacy.ideasHeading')}>
+          {ideaList.map((idea) => <li key={idea}>{idea}</li>)}
+        </ul>
+      </section>
 
-        <section className="intimacy-section intimacy-desire-section">
-          <div className="intimacy-section-heading">
-            <span className="form-step-number">03</span>
-            <div><h3>{t('intimacyDesireTitle')}</h3><p>{t('intimacyDesireDescription')}</p></div>
-          </div>
-          <div className="intimacy-desire-topline">
-            <span>{desire === null ? t('intimacyDesireNotChecked') : t('intimacyDesireRating', { value: desire })}</span>
-            {desire !== null && Number(desire) >= 8 && <span className="intimacy-high-desire-badge"><FiZap aria-hidden="true" /> {t('intimacyHighDesire')}</span>}
-          </div>
-          <input
-            className="intimacy-desire-range"
-            type="range"
-            min="1"
-            max="10"
-            step="1"
-            value={desire ?? 5}
-            onChange={(event) => { setDesire(Number(event.target.value)); setSaveState('idle'); setSaveNotice('') }}
-            aria-label={t('intimacyDesireTitle')}
-          />
-          <div className="intimacy-desire-endpoints"><span>{t('intimacyDesireLow')}</span><span>{t('intimacyDesireHigh')}</span></div>
-          <button type="button" className={`intimacy-skip-desire${desire === null ? ' is-selected' : ''}`} onClick={() => { setDesire(null); setSaveState('idle'); setSaveNotice('') }}>{t('skipDesire')}</button>
-        </section>
+      <form className="card composer" onSubmit={handoff} aria-labelledby="composer-heading">
+        <h3 id="composer-heading" className="card-title">{t('intimacy.composerHeading')}</h3>
+        <p className="card-copy">{t('intimacy.composerCopy')}</p>
+        <label className="field" htmlFor="partner-message">
+          <span className="field-label">{t('intimacy.messageLabel')}</span>
+          <textarea id="partner-message" rows={3} maxLength={400} value={composed} onChange={(event) => setMessage(event.target.value)} />
+        </label>
+        <button type="button" className="ghost-button" onClick={() => setMessage(null)} disabled={message === null}>{t('intimacy.resetMessage')}</button>
 
-        <section className="intimacy-section">
-          <div className="intimacy-section-heading">
-            <span className="form-step-number">04</span>
-            <div><h3>{t('intimacyVibeTitle')}</h3><p>{t('intimacyVibeDescription')}</p></div>
-          </div>
-          <div className="intimacy-vibe-grid" role="radiogroup" aria-label={t('intimacyVibeTitle')}>
-            {vibes.map((vibe) => (
-              <button
-                type="button"
-                key={vibe}
-                className={`intimacy-vibe-card intimacy-vibe-${vibe}${desireVibe === vibe ? ' is-selected' : ''}`}
-                role="radio"
-                aria-checked={desireVibe === vibe}
-                onClick={() => updateVibe(vibe)}
-              >
-                <span className="intimacy-vibe-icon" aria-hidden="true">{vibe === 'tender' ? '♡' : vibe === 'playful' ? '✧' : '✦'}</span>
-                <strong>{t(`intimacyVibe${capitalize(vibe)}`)}</strong>
-                <small>{t(`intimacyVibe${capitalize(vibe)}Description`)}</small>
-                {desireVibe === vibe && <FiCheck className="intimacy-vibe-check" aria-hidden="true" />}
-              </button>
-            ))}
-          </div>
+        <div className="channel-row" role="radiogroup" aria-label={t('intimacy.channelLabel')}>
+          {CHANNELS.map((item) => (
+            <button key={item} type="button" role="radio" aria-checked={channel === item} className={`channel-option${channel === item ? ' is-selected' : ''} spot`} onClick={() => { setChannel(item); setComposerError(''); setCopyState('') }}>
+              {item === 'sms' && <FiMessageSquare aria-hidden="true" />}
+              {item === 'email' && <FiMail aria-hidden="true" />}
+              {item === 'whatsapp' && <FiMessageSquare aria-hidden="true" />}
+              {item === 'copy' && <FiCopy aria-hidden="true" />}
+              <span>{t(`intimacy.channel.${item}`)}</span>
+            </button>
+          ))}
+        </div>
 
-          <div className="intimacy-term-list" role="group" aria-label={t('preferredTerms')}>
-            {terms.map((term) => (
-              <button
-                type="button"
-                key={term}
-                className={`intimacy-term${selectedTerms.includes(term) ? ' is-selected' : ''}`}
-                aria-pressed={selectedTerms.includes(term)}
-                onClick={() => toggleTerm(term)}
-              >
-                <FiHeart aria-hidden="true" /> {t(term)}
-              </button>
-            ))}
-          </div>
-        </section>
-
-        {extraFlirty && (
-          <motion.section className="partner-spark-card" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}>
-            <div className="partner-spark-header">
-              <span className="partner-spark-icon"><FiHeart aria-hidden="true" /></span>
-              <div><span className="eyebrow-label">{t('intimacyPartnerEyebrow')}</span><h3>{t('intimacyPartnerTitle')}</h3></div>
-              <span className="partner-spark-glint" aria-hidden="true">✦</span>
-            </div>
-            <p className="partner-spark-description">{t('intimacyPartnerDescription')}</p>
-            {!isShareOpen ? (
-              <Button type="button" variant="contained" className="partner-spark-open" startIcon={<FiShare2 aria-hidden="true" />} onClick={() => { setIsShareOpen(true); setShareNotice('') }}>
-                {t('intimacyPartnerCompose')}
-              </Button>
-            ) : (
-              <div className="partner-share-editor">
-                <label className="partner-message-label" htmlFor="partner-note">{t('intimacyPartnerMessageLabel')}</label>
-                <textarea id="partner-note" rows={3} maxLength={500} value={partnerMessage} onChange={(event) => { setPartnerMessage(event.target.value); setShareNotice('') }} />
-                <label className="partner-phone-label" htmlFor="partner-phone">{t('intimacyPartnerPhoneLabel')}<span>{t('optional')}</span></label>
-                <input id="partner-phone" type="tel" autoComplete="tel" inputMode="tel" placeholder={t('intimacyPartnerPhonePlaceholder')} value={partnerPhone} onChange={(event) => setPartnerPhone(event.target.value)} />
-                <div className="partner-share-actions">
-                  <Button type="button" variant="contained" startIcon={<FiShare2 aria-hidden="true" />} onClick={shareWithPartner} disabled={!partnerMessage.trim()}>
-                    {t('intimacyPartnerShare')}
-                  </Button>
-                  <button type="button" className="partner-copy-button" onClick={copyMessage} disabled={!partnerMessage.trim()}><FiCopy aria-hidden="true" /> {t('intimacyPartnerCopy')}</button>
-                </div>
-                {shareNotice && <p className="partner-share-notice" role="status">{shareNotice}</p>}
-                <small className="partner-share-privacy"><FiShield aria-hidden="true" /> {t('intimacyPartnerPrivacy')}</small>
-              </div>
-            )}
-          </motion.section>
+        {(channel === 'sms' || channel === 'whatsapp') && (
+          <label className="field" htmlFor="partner-phone">
+            <span className="field-label">{t('intimacy.phoneLabel')}</span>
+            <input id="partner-phone" type="tel" inputMode="tel" autoComplete="tel" placeholder="+251 9XX XXX XXX" value={phone} onChange={(event) => setPhone(event.target.value)} aria-describedby="phone-help" />
+            <small id="phone-help" className="field-help">{t('intimacy.phoneHelp')}</small>
+          </label>
+        )}
+        {channel === 'email' && (
+          <label className="field" htmlFor="partner-email">
+            <span className="field-label">{t('intimacy.emailLabel')}</span>
+            <input id="partner-email" type="email" autoComplete="email" placeholder="name@example.com" value={email} onChange={(event) => setEmail(event.target.value)} />
+          </label>
         )}
 
-        {error && <Alert severity="error">{error}</Alert>}
-        {saveNotice && <Alert severity="info">{saveNotice}</Alert>}
-        {!session && (
-          <div className="intimacy-signin-note">
-            <FiShield aria-hidden="true" />
-            <span>{t('intimacyGuestDataNote')}</span>
-            <button type="button" onClick={signInToSave}>{t('intimacySignInToSave')}</button>
-          </div>
+        {channel === 'copy' ? (
+          <button type="button" className="primary-button spot" onClick={copyOrShare}>
+            {typeof navigator !== 'undefined' && navigator.share ? <FiShare2 aria-hidden="true" /> : <FiCopy aria-hidden="true" />}
+            {typeof navigator !== 'undefined' && navigator.share ? t('intimacy.shareButton') : t('intimacy.copyButton')}
+          </button>
+        ) : (
+          <button type="submit" className="primary-button spot">{t(`intimacy.open.${channel}`)}</button>
         )}
-        <Button type="submit" variant="contained" fullWidth disabled={isLoading || saveState === 'saving'} className="form-submit-button">
-          {saveState === 'saving' ? t('savingPrivateReflection') : saveState === 'saved' ? t('intimacySaved') : saveState === 'preview' ? t('intimacyPreviewReady') : session ? t('saveIntimacy') : t('previewIntimacy')}
-        </Button>
+        {composerError && <p className="save-state is-error" role="alert">{composerError}</p>}
+        {copyState && <p className="save-state" role="status">{copyState}</p>}
+        <p className="card-footnote">{t('intimacy.handoffNote')}</p>
       </form>
+
+      <section className="card save-card">
+        <button type="button" className="primary-button spot" onClick={saveToday} disabled={saveState.state === 'saving'}>
+          {saveState.state === 'saving' ? t('intimacy.saving') : t('intimacy.saveToday')}
+        </button>
+        {saveState.state === 'saved' && <p className="save-state is-saved" role="status">{saveState.message}</p>}
+        {saveState.state === 'error' && <p className="save-state is-error" role="alert">{saveState.message}</p>}
+        <p className="card-footnote">{t('intimacy.privateNote')}</p>
+      </section>
     </div>
   )
 }
-
-const capitalize = (value) => value.charAt(0).toUpperCase() + value.slice(1)
 
 export default Intimacy

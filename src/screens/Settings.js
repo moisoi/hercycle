@@ -1,165 +1,213 @@
-import React, { useEffect, useState } from 'react'
-import { Alert, Button } from '@mui/material'
-import { motion } from 'framer-motion'
-import { FiCheck, FiLogOut, FiMoon, FiSun, FiType } from 'react-icons/fi'
+import React, { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
+import { FiCheck, FiLogOut } from 'react-icons/fi'
 
+import Slider from '../components/Slider'
+import { getLang, setLang, LANGUAGES } from '../lib/i18n'
+import { normalizeCycleLength, normalizePeriodLength } from '../lib/cycle'
+import { pushSettings } from '../lib/sync'
+import { KEYS, getMotionOn, getPrefs, getProfile, savePrefs, saveProfile, setMotionOn, usePrefs, useProfile, writeRaw } from '../lib/store'
 import { supabase } from '../lib/supabase'
 
-const STORAGE_KEY = 'hercycle.preferences'
-const defaults = { theme: 'light', fontSize: 'medium', hideIntimacy: false }
-
-const readSavedPreferences = () => {
-  try {
-    return { ...defaults, ...JSON.parse(window.localStorage.getItem(STORAGE_KEY) || '{}') }
-  } catch {
-    return defaults
-  }
+const applyTheme = (theme) => {
+  document.documentElement.setAttribute('data-theme', theme)
 }
 
-const Settings = ({ session }) => {
+const applyFont = (size) => {
+  document.documentElement.setAttribute('data-font-size', size)
+}
+
+const Switch = ({ label, checked, onChange, description, id }) => (
+  <div className="toggle-row">
+    <div>
+      <span className="toggle-label" id={`${id}-label`}>{label}</span>
+      {description && <p className="card-copy">{description}</p>}
+    </div>
+    <button type="button" id={id} role="switch" aria-checked={checked} aria-labelledby={`${id}-label`} className={`switch${checked ? ' is-on' : ''}`} onClick={() => onChange(!checked)}>
+      <span />
+    </button>
+  </div>
+)
+
+const Settings = ({ session, client }) => {
   const { t } = useTranslation()
   const navigate = useNavigate()
-  const [preferences, setPreferences] = useState(readSavedPreferences)
-  const [saveState, setSaveState] = useState('idle')
-  const [error, setError] = useState('')
+  const saved = usePrefs()
+  const savedProfile = useProfile()
+  const [draft, setDraft] = useState(() => ({ ...getPrefs() }))
+  const [profileDraft, setProfileDraft] = useState(() => ({ ...getProfile() }))
+  const [motionOn, setMotionState] = useState(() => getMotionOn())
+  const [lang, setLangState] = useState(() => getLang())
+  const [status, setStatus] = useState({ state: 'idle', message: '' })
+  const [confirmClear, setConfirmClear] = useState(false)
 
-  useEffect(() => {
-    if (!session?.user?.id) return undefined
-    let isMounted = true
+  const dirty = JSON.stringify(draft) !== JSON.stringify({ ...saved }) || JSON.stringify(profileDraft) !== JSON.stringify({ ...savedProfile })
 
-    const loadPreferences = async () => {
-      const { data, error: queryError } = await supabase
-        .from('user_settings')
-        .select('theme_preference, font_size, hide_intimacy')
-        .eq('user_id', session.user.id)
-        .maybeSingle()
-      if (queryError || !isMounted || !data) return
-
-      const next = {
-        theme: data.theme_preference || defaults.theme,
-        fontSize: data.font_size || defaults.fontSize,
-        hideIntimacy: data.hide_intimacy ?? defaults.hideIntimacy,
-      }
-      setPreferences(next)
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next))
-    }
-
-    loadPreferences().catch((queryError) => console.error('Unable to load preferences:', queryError))
-    return () => { isMounted = false }
-  }, [session?.user?.id])
-
-  useEffect(() => {
-    const root = document.documentElement
-    if (preferences.theme === 'system') root.setAttribute('data-theme', 'system')
-    else if (preferences.theme === 'dark') root.setAttribute('data-theme', 'dark')
-    else root.removeAttribute('data-theme')
-
-    root.setAttribute('data-font-size', preferences.fontSize)
-    window.dispatchEvent(new CustomEvent('hercycle:preferences-changed', { detail: preferences }))
-  }, [preferences])
-
-  const updatePreference = (key, value) => {
-    setSaveState('idle')
-    setPreferences((current) => ({ ...current, [key]: value }))
+  const change = (key, value) => {
+    setDraft((current) => ({ ...current, [key]: value }))
+    setStatus({ state: 'idle', message: '' })
+    if (key === 'theme') applyTheme(value)
+    if (key === 'fontSize') applyFont(value)
   }
 
-  const savePreferences = async () => {
-    setError('')
-    setSaveState('saving')
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(preferences))
-    window.dispatchEvent(new CustomEvent('hercycle:preferences-changed', { detail: preferences }))
+  const changeProfile = (key, value) => {
+    setProfileDraft((current) => ({ ...current, [key]: value }))
+    setStatus({ state: 'idle', message: '' })
+  }
 
-    if (session?.user?.id) {
-      try {
-        const { error: saveError } = await supabase.from('user_settings').upsert({
-          user_id: session.user.id,
-          theme_preference: preferences.theme,
-          font_size: preferences.fontSize,
-          hide_intimacy: preferences.hideIntimacy,
-          updated_at: new Date().toISOString(),
-        }, { onConflict: 'user_id' })
-        if (saveError) throw saveError
-      } catch (saveError) {
-        console.error('Unable to save preferences:', saveError)
-        setError(saveError.message || t('errorGeneric'))
-        setSaveState('idle')
+  // Motion and language act at once and are stored on this device. They are not held for Save.
+  const toggleMotion = (on) => {
+    setMotionOn(on)
+    setMotionState(on)
+  }
+
+  const chooseLanguage = (next) => {
+    setLang(next)
+    setLangState(next)
+  }
+
+  const save = async () => {
+    setStatus({ state: 'saving', message: '' })
+    const nextPrefs = savePrefs(draft)
+    const nextProfile = saveProfile({
+      ...profileDraft,
+      cycleLength: normalizeCycleLength(profileDraft.cycleLength),
+      periodLength: normalizePeriodLength(profileDraft.periodLength),
+    })
+    if (!nextPrefs || !nextProfile) {
+      setStatus({ state: 'error', message: t('settings.saveFailedDevice') })
+      return
+    }
+    if (session?.user?.id && client) {
+      const result = await pushSettings(client, session.user.id, { profile: nextProfile, prefs: nextPrefs, lang })
+      if (!result.ok) {
+        setStatus({ state: 'error', message: t('settings.saveFailedAccount', { error: result.error }) })
         return
       }
+      setStatus({ state: 'saved', message: t('settings.savedAccount') })
+      return
     }
+    setStatus({ state: 'saved', message: t('settings.savedDevice') })
+  }
 
-    setSaveState('saved')
+  const clearDevice = () => {
+    if (!confirmClear) {
+      setConfirmClear(true)
+      return
+    }
+    Object.values(KEYS).filter((key) => key !== KEYS.lang).forEach((key) => {
+      try { window.localStorage.removeItem(key) } catch { /* storage unavailable */ }
+    })
+    writeRaw(KEYS.motion, motionOn ? 'on' : 'off')
+    window.sessionStorage.clear()
+    window.location.assign('/onboarding')
   }
 
   const signOut = async () => {
-    const { error: signOutError } = await supabase.auth.signOut()
-    if (signOutError) {
-      setError(signOutError.message || t('errorGeneric'))
-      return
-    }
+    if (supabase) await supabase.auth.signOut()
     navigate('/auth')
   }
 
+  const sizes = [
+    { key: 'small', label: t('settings.fontSmall'), sample: 'Aa' },
+    { key: 'medium', label: t('settings.fontMedium'), sample: 'Aa' },
+    { key: 'large', label: t('settings.fontLarge'), sample: 'Aa' },
+  ]
+  const themes = [
+    { key: 'light', label: t('settings.themeLight') },
+    { key: 'dark', label: t('settings.themeDark') },
+    { key: 'system', label: t('settings.themeSystem') },
+  ]
+
   return (
-    <div className="settings-page">
-      <section className="settings-intro">
-        <span className="eyebrow-label">MAKE THIS SPACE YOURS</span>
-        <h2>Small comforts, your way.</h2>
-        <p>Choose what feels easier to see and use. Your preferences are private.</p>
+    <form className="page settings-page" onSubmit={(event) => { event.preventDefault(); save() }} noValidate>
+      <section className="card">
+        <h2 className="card-title">{t('settings.motionHeading')}</h2>
+        <Switch
+          id="motion-switch"
+          label={t('settings.motionLabel')}
+          description={t('settings.motionCopy')}
+          checked={motionOn}
+          onChange={toggleMotion}
+        />
+        <p className="card-footnote" role="status">{t('settings.motionNote')}</p>
       </section>
 
-      <section className="settings-card">
-        <div className="settings-section-heading"><span className="settings-section-icon"><FiSun aria-hidden="true" /></span><div><h3>{t('appearance')}</h3><p>Set the mood for your space.</p></div></div>
-        <div className="settings-option-grid" role="radiogroup" aria-label={t('appearance')}>
-          {[
-            { key: 'light', label: t('lightMode'), icon: FiSun },
-            { key: 'dark', label: t('darkMode'), icon: FiMoon },
-            { key: 'system', label: 'System', icon: FiType },
-          ].map(({ key, label, icon: Icon }) => (
-            <button key={key} type="button" role="radio" aria-checked={preferences.theme === key} className={`settings-choice${preferences.theme === key ? ' is-selected' : ''}`} onClick={() => updatePreference('theme', key)}>
-              <Icon aria-hidden="true" /><span>{label}</span>{preferences.theme === key && <FiCheck className="settings-choice-check" aria-hidden="true" />}
+      <section className="card" aria-labelledby="look-heading">
+        <h2 id="look-heading" className="card-title">{t('settings.lookHeading')}</h2>
+        <p className="field-label" id="font-label">{t('settings.fontSize')}</p>
+        <div className="segmented segmented-three" role="radiogroup" aria-labelledby="font-label">
+          {sizes.map(({ key, label, sample }) => (
+            <button key={key} type="button" role="radio" aria-checked={draft.fontSize === key} className={`segment size-${key}${draft.fontSize === key ? ' is-selected' : ''} spot`} onClick={() => change('fontSize', key)}>
+              <strong aria-hidden="true">{sample}</strong>
+              <span>{label}</span>
+              {draft.fontSize === key && <FiCheck aria-hidden="true" />}
+            </button>
+          ))}
+        </div>
+        <p className="field-label" id="theme-label">{t('settings.theme')}</p>
+        <div className="segmented segmented-three" role="radiogroup" aria-labelledby="theme-label">
+          {themes.map(({ key, label }) => (
+            <button key={key} type="button" role="radio" aria-checked={draft.theme === key} className={`segment${draft.theme === key ? ' is-selected' : ''} spot`} onClick={() => change('theme', key)}>
+              {label}
+            </button>
+          ))}
+        </div>
+        <p className="field-label" id="lang-label">{t('settings.language')}</p>
+        <div className="lang-choice" role="radiogroup" aria-labelledby="lang-label">
+          {LANGUAGES.map((code) => (
+            <button key={code} type="button" role="radio" lang={code} aria-checked={lang === code} className={`segment${lang === code ? ' is-selected' : ''} spot`} onClick={() => chooseLanguage(code)}>
+              {code === 'en' ? 'English' : 'አማርኛ'}
             </button>
           ))}
         </div>
       </section>
 
-      <section className="settings-card">
-        <div className="settings-section-heading"><span className="settings-section-icon settings-section-icon-lilac"><FiType aria-hidden="true" /></span><div><h3>{t('fontSize')}</h3><p>Comfortable reading is part of good care.</p></div></div>
-        <div className="settings-option-grid settings-option-grid-three" role="radiogroup" aria-label={t('fontSize')}>
-          {[
-            { key: 'small', label: t('smallText'), sample: 'Aa' },
-            { key: 'medium', label: t('mediumText'), sample: 'Aa' },
-            { key: 'large', label: t('largeText'), sample: 'Aa' },
-          ].map(({ key, label, sample }) => (
-            <button key={key} type="button" role="radio" aria-checked={preferences.fontSize === key} className={`settings-choice settings-text-choice settings-text-${key}${preferences.fontSize === key ? ' is-selected' : ''}`} onClick={() => updatePreference('fontSize', key)}>
-              <strong>{sample}</strong><span>{label}</span>{preferences.fontSize === key && <FiCheck className="settings-choice-check" aria-hidden="true" />}
-            </button>
-          ))}
+      <section className="card" aria-labelledby="cycle-settings-heading">
+        <h2 id="cycle-settings-heading" className="card-title">{t('settings.cycleHeading')}</h2>
+        <label className="field" htmlFor="settings-last-period">
+          <span className="field-label">{t('settings.lastPeriod')}</span>
+          <input id="settings-last-period" type="date" max={new Date().toISOString().slice(0, 10)} value={profileDraft.lastPeriodStart || ''} onChange={(event) => changeProfile('lastPeriodStart', event.target.value || null)} />
+        </label>
+        <Slider id="settings-cycle-length" label={t('settings.cycleLength')} min={21} max={40} value={normalizeCycleLength(profileDraft.cycleLength)} tone="sage" format={(value) => t('checkIn.days', { count: value })} onChange={(value) => changeProfile('cycleLength', value)} />
+        <Slider id="settings-period-length" label={t('settings.periodLength')} min={2} max={10} value={normalizePeriodLength(profileDraft.periodLength)} tone="rose" format={(value) => t('checkIn.days', { count: value })} onChange={(value) => changeProfile('periodLength', value)} />
+      </section>
+
+      <section className="card" aria-labelledby="privacy-heading">
+        <h2 id="privacy-heading" className="card-title">{t('settings.privacyHeading')}</h2>
+        <Switch id="hide-intimacy" label={t('settings.hideIntimacy')} description={t('settings.hideIntimacyCopy')} checked={draft.hideIntimacy} onChange={(value) => change('hideIntimacy', value)} />
+        <div className="danger-zone">
+          <p className="card-copy">{t('settings.clearCopy')}</p>
+          <button type="button" className="ghost-button danger spot" onClick={clearDevice}>
+            {confirmClear ? t('settings.clearConfirm') : t('settings.clearDevice')}
+          </button>
         </div>
       </section>
 
-      <motion.section className="settings-card settings-privacy-card" whileHover={{ y: -2 }}>
-        <div className="settings-toggle-copy"><span className="settings-section-icon settings-section-icon-rose">♡</span><div><h3>{t('privacy')}</h3><p>{t('hideIntimacySection')}</p><small>Your private reflections stay saved; this only hides the Intimacy tab.</small></div></div>
-        <button type="button" className={`settings-switch${preferences.hideIntimacy ? ' is-on' : ''}`} role="switch" aria-checked={preferences.hideIntimacy} aria-label={t('hideIntimacySection')} onClick={() => updatePreference('hideIntimacy', !preferences.hideIntimacy)}><span /></button>
-      </motion.section>
-
-      <section className="settings-about-card">
-        <div><span className="eyebrow-label">MADE WITH CARE</span><h3>{t('about')}</h3><p>{t('appVersion', { version: '1.1.0' })}</p></div>
-        <span className="settings-about-flower" aria-hidden="true">✿</span>
+      <section className="card" aria-labelledby="rewards-heading">
+        <h2 id="rewards-heading" className="card-title">{t('settings.rewardsHeading')}</h2>
+        <Switch id="gamification" label={t('settings.gamification')} description={t('settings.gamificationCopy')} checked={draft.gamification} onChange={(value) => change('gamification', value)} />
+        <Switch id="show-rewards" label={t('settings.showRewards')} description={t('settings.showRewardsCopy')} checked={draft.showRewards} onChange={(value) => change('showRewards', value)} />
+        <Switch id="celebrate" label={t('settings.celebrate')} description={t('settings.celebrateCopy')} checked={draft.celebrate} onChange={(value) => change('celebrate', value)} />
+        <Switch id="notifications" label={t('settings.notifications')} description={t('settings.notificationsCopy')} checked={draft.notifications} onChange={(value) => change('notifications', value)} />
       </section>
 
-      {!session && <p className="settings-local-note">You are using a private local space. Sign in to sync these preferences between devices.</p>}
-      {error && <Alert severity="error">{error}</Alert>}
-      <Button variant="contained" onClick={savePreferences} disabled={saveState === 'saving'} className="form-submit-button settings-save-button">
-        {saveState === 'saving' ? 'Saving preferences…' : saveState === 'saved' ? t('preferencesSaved') : t('saveChanges')}
-      </Button>
+      <section className="save-card card" aria-live="polite">
+        <button type="submit" className="primary-button spot" disabled={status.state === 'saving' || !dirty}>
+          {status.state === 'saving' ? t('settings.saving') : dirty ? t('settings.savePreferences') : t('settings.allSaved')}
+        </button>
+        {status.state === 'saved' && <p className="save-state is-saved" role="status">{status.message}</p>}
+        {status.state === 'error' && <p className="save-state is-error" role="alert">{status.message}</p>}
+        {!session && <p className="card-footnote">{t('settings.guestNote')}</p>}
+      </section>
+
       {session && (
-        <button type="button" className="settings-signout-button" onClick={signOut}>
-          <FiLogOut aria-hidden="true" /> Sign out of this device
+        <button type="button" className="settings-signout" onClick={signOut}>
+          <FiLogOut aria-hidden="true" /> {t('signOut')}
         </button>
       )}
-    </div>
+    </form>
   )
 }
 

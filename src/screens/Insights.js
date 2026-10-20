@@ -1,154 +1,149 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import { Alert, Skeleton } from '@mui/material'
-import { motion } from 'framer-motion'
-import { FiActivity, FiHeart, FiInfo, FiSun } from 'react-icons/fi'
 import { useTranslation } from 'react-i18next'
 
-import { supabase } from '../lib/supabase'
+import { runAwards, setFlag } from '../lib/awards'
+import { parseDateKey, toDateKey } from '../lib/cycle'
+import { formatDate, formatNumber } from '../lib/i18n'
+import { useCheckins } from '../lib/store'
 
-const Insights = ({ session }) => {
-  const { t } = useTranslation()
-  const [cycles, setCycles] = useState([])
-  const [isLoading, setIsLoading] = useState(Boolean(session?.user?.id))
-  const [error, setError] = useState('')
+// Ranges are applied in memory from one load of the device cache. Changing the range never refetches.
+const RANGES = [
+  { key: 7, label: 'range7' },
+  { key: 30, label: 'range30' },
+  { key: 90, label: 'range90' },
+  { key: 'all', label: 'rangeAll' },
+]
 
-  useEffect(() => {
-    let isMounted = true
+const PHASE_KEYS = ['menstrual', 'follicular', 'ovulatory', 'luteal']
 
-    const loadCycles = async () => {
-      if (!session?.user?.id) {
-        setIsLoading(false)
-        return
-      }
-      setIsLoading(true)
-      const { data, error: queryError } = await supabase
-        .from('cycles')
-        .select('id, mood, energy, libido, phase, date')
-        .eq('user_id', session.user.id)
-        .order('date', { ascending: false })
-        .limit(14)
+const average = (values) => {
+  const numbers = values.filter(Number.isFinite)
+  if (!numbers.length) return null
+  return Math.round((numbers.reduce((sum, value) => sum + value, 0) / numbers.length) * 10) / 10
+}
 
-      if (!isMounted) return
-      if (queryError) {
-        setError(queryError.message || t('errorGeneric'))
-      } else {
-        setCycles((data || []).reverse())
-      }
-      setIsLoading(false)
-    }
-
-    loadCycles().catch((queryError) => {
-      if (isMounted) {
-        setError(queryError.message || t('errorGeneric'))
-        setIsLoading(false)
-      }
-    })
-
-    return () => { isMounted = false }
-  }, [session?.user?.id, t])
-
-  const moodAverage = useMemo(() => average(cycles, 'mood'), [cycles])
-  const energyAverage = useMemo(() => average(cycles, 'energy'), [cycles])
-  const moodPoints = useMemo(() => makePoints(cycles, 'mood'), [cycles])
-  const energyPoints = useMemo(() => makePoints(cycles, 'energy'), [cycles])
-
+const Sparkline = ({ values, label }) => {
+  const points = values.filter((item) => Number.isFinite(item.value))
+  if (points.length < 2) return <p className="card-copy">{label}</p>
+  const width = 320
+  const height = 110
+  const step = width / (points.length - 1)
+  const path = points.map((item, index) => `${index === 0 ? 'M' : 'L'}${(index * step).toFixed(1)},${(height - ((item.value - 1) / 9) * (height - 16) - 8).toFixed(1)}`).join(' ')
   return (
-    <div className="insights-page">
-      <section className="insight-explainer">
-        <div className="insight-explainer-icon"><FiInfo aria-hidden="true" /></div>
-        <div><strong>Curiosity, not certainty.</strong><p>{t('insightsDescription')}</p></div>
-      </section>
-
-      {error && <Alert severity="warning" className="dashboard-alert">{error}</Alert>}
-
-      <div className="insights-summary-grid">
-        <InsightStat icon={FiActivity} label={t('averageMood')} value={moodAverage ? `${moodAverage.toFixed(1)} / 10` : '—'} accent="rose" />
-        <InsightStat icon={FiSun} label={t('averageEnergy')} value={energyAverage ? `${energyAverage.toFixed(1)} / 10` : '—'} accent="sage" />
-        <InsightStat icon={FiHeart} label={t('checkInCount')} value={cycles.length} accent="lilac" />
-      </div>
-
-      <motion.section className="insight-chart-card" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}>
-        <div className="insight-card-heading">
-          <div><span className="eyebrow-label">THE LAST TWO WEEKS</span><h2>{t('recentMood')}</h2></div>
-          <span className="chart-legend"><i />{t('mood')}</span>
-        </div>
-        {isLoading ? (
-          <Skeleton height={190} />
-        ) : cycles.length >= 2 ? (
-          <ResponsiveChart moodPoints={moodPoints} energyPoints={energyPoints} cycles={cycles} />
-        ) : (
-          <div className="insight-empty-state">
-            <span className="insight-empty-art">✧</span>
-            <strong>{t('noInsightsYet')}</strong>
-            <p>{t('needMoreData')}</p>
-          </div>
-        )}
-        {cycles.length >= 2 && <p className="chart-caption">Your scores are shown from oldest to newest. Patterns need time; every check-in is optional.</p>}
-      </motion.section>
-
-      <section className="pattern-note-grid">
-        <article className="pattern-note pattern-note-rose">
-          <span className="pattern-note-number">01</span>
-          <h3>Small patterns can be meaningful.</h3>
-          <p>Notice what supports you, without judging the days that feel different.</p>
-        </article>
-        <article className="pattern-note pattern-note-sage">
-          <span className="pattern-note-number">02</span>
-          <h3>Your experience is the expert.</h3>
-          <p>Cycle phase can offer context, not a rule for how you should feel.</p>
-        </article>
-      </section>
-    </div>
+    <svg className="sparkline" viewBox={`0 0 ${width} ${height}`} role="img" aria-label={label}>
+      <path d={path} className="sparkline-line" />
+      {points.map((item, index) => (
+        <circle key={item.date} cx={index * step} cy={height - ((item.value - 1) / 9) * (height - 16) - 8} r="3.5" className="sparkline-dot" />
+      ))}
+    </svg>
   )
 }
 
-const InsightStat = ({ icon: Icon, label, value, accent }) => (
-  <article className={`insight-stat-card insight-stat-${accent}`}>
-    <span className="insight-stat-icon"><Icon aria-hidden="true" /></span>
-    <span className="insight-stat-label">{label}</span>
-    <strong>{value}</strong>
-  </article>
-)
+const Insights = () => {
+  const { t, i18n } = useTranslation()
+  const checkins = useCheckins()
+  const [range, setRange] = useState(30)
 
-const ResponsiveChart = ({ moodPoints, energyPoints, cycles }) => (
-  <div className="chart-wrap">
-    <svg className="insight-chart" viewBox="0 0 700 190" role="img" aria-label="Mood and energy ratings across recent check-ins">
-      {[1, 3, 5, 7, 10].map((line) => {
-        const y = 158 - ((line - 1) / 9) * 131
-        return <g key={line}><line x1="36" x2="686" y1={y} y2={y} className="chart-grid-line" /><text x="12" y={y + 4} className="chart-axis-label">{line}</text></g>
-      })}
-      {moodPoints && <polyline points={moodPoints} className="chart-line chart-line-mood" />}
-      {energyPoints && <polyline points={energyPoints} className="chart-line chart-line-energy" />}
-      {cycles.map((cycle, index) => {
-        const x = 44 + (index * 630) / Math.max(cycles.length - 1, 1)
-        const mood = Number(cycle.mood)
-        const y = mood > 0 ? 158 - ((Math.min(mood, 10) - 1) / 9) * 131 : null
-        return y === null ? null : <circle key={cycle.id} cx={x} cy={y} r="4.5" className="chart-point" />
-      })}
-    </svg>
-    <div className="chart-axis-dates">
-      <span>{cycles[0]?.date}</span>
-      <span>{cycles[cycles.length - 1]?.date}</span>
+  // Viewing insights is a private reflection. It is recorded once, and it never shows a score.
+  // Idempotent: the flag and milestone are each written once, so re-running on a language change is safe.
+  useEffect(() => {
+    setFlag('reflection')
+    runAwards(t)
+  }, [t])
+
+  const chooseRange = (key) => {
+    setRange(key)
+    if (key === 30 || key === 90 || key === 'all') {
+      setFlag('reviewedMonth')
+      runAwards(t)
+    }
+  }
+
+  const stats = useMemo(() => {
+    const today = new Date()
+    const cutoff = range === 'all' ? null : toDateKey(new Date(today.getFullYear(), today.getMonth(), today.getDate() - (range - 1)))
+    const today0 = toDateKey(today)
+    const entries = Object.entries(checkins)
+      .filter(([date]) => parseDateKey(date) && date <= today0 && (!cutoff || date >= cutoff))
+      .sort(([a], [b]) => (a < b ? -1 : 1))
+
+    const values = entries.map(([, entry]) => entry)
+    const phaseCounts = PHASE_KEYS.reduce((acc, key) => ({ ...acc, [key]: values.filter((item) => item.phase === key).length }), {})
+    const phaseTotal = Object.values(phaseCounts).reduce((sum, value) => sum + value, 0)
+    return {
+      days: entries.length,
+      mood: average(values.map((item) => item.mood)),
+      energy: average(values.map((item) => item.energy)),
+      periodDays: values.filter((item) => item.period).length,
+      phaseCounts,
+      phaseTotal,
+      moodSeries: entries.map(([date, entry]) => ({ date, value: entry.mood })),
+      energySeries: entries.map(([date, entry]) => ({ date, value: entry.energy })),
+    }
+  }, [checkins, range])
+
+  const none = stats.days === 0
+
+  return (
+    <div className="page insights-page">
+      <section className="card">
+        <h2 className="card-title">{t('insights.rangeHeading')}</h2>
+        <div className="segmented" role="radiogroup" aria-label={t('insights.rangeHeading')}>
+          {RANGES.map(({ key, label }) => (
+            <button key={key} type="button" role="radio" aria-checked={range === key} className={`segment${range === key ? ' is-selected' : ''} spot`} onClick={() => chooseRange(key)}>
+              {t(`insights.${label}`)}
+            </button>
+          ))}
+        </div>
+      </section>
+
+      {none ? (
+        <section className="card empty-card">
+          <h2 className="card-title">{t('insights.emptyTitle')}</h2>
+          <p className="card-copy">{t('insights.emptyCopy')}</p>
+        </section>
+      ) : (
+        <>
+          <section className="stat-grid" aria-label={t('insights.summary')}>
+            <div className="stat-card spot"><span>{t('insights.daysLogged')}</span><strong>{formatNumber(stats.days, i18n.language)}</strong></div>
+            <div className="stat-card spot"><span>{t('insights.averageMood')}</span><strong>{stats.mood ?? '–'}</strong></div>
+            <div className="stat-card spot"><span>{t('insights.averageEnergy')}</span><strong>{stats.energy ?? '–'}</strong></div>
+            <div className="stat-card spot"><span>{t('insights.periodDays')}</span><strong>{formatNumber(stats.periodDays, i18n.language)}</strong></div>
+          </section>
+
+          <section className="card">
+            <h2 className="card-title">{t('insights.moodTrend')}</h2>
+            <Sparkline values={stats.moodSeries} label={t('insights.moodTrend')} />
+            <p className="card-footnote">{t('insights.trendNote')}</p>
+          </section>
+
+          <section className="card">
+            <h2 className="card-title">{t('insights.energyTrend')}</h2>
+            <Sparkline values={stats.energySeries} label={t('insights.energyTrend')} />
+          </section>
+
+          <section className="card">
+            <h2 className="card-title">{t('insights.phaseMix')}</h2>
+            <ul className="phase-bars">
+              {PHASE_KEYS.map((key) => {
+                const count = stats.phaseCounts[key]
+                const percent = stats.phaseTotal ? Math.round((count / stats.phaseTotal) * 100) : 0
+                return (
+                  <li key={key} className={`phase-bar phase-${key}`}>
+                    <span>{t(`phase.${key}`)}</span>
+                    <div className="phase-bar-track" aria-hidden="true"><i style={{ width: `${percent}%` }} /></div>
+                    <strong>{count}</strong>
+                  </li>
+                )
+              })}
+            </ul>
+            <p className="card-footnote">{t('insights.phaseNote')}</p>
+          </section>
+        </>
+      )}
+      <p className="card-footnote">{t('insights.updated', { date: formatDate(new Date(), { day: 'numeric', month: 'long' }) })}</p>
     </div>
-    <div className="chart-legend-row"><span><i className="legend-dot legend-dot-mood" />Mood</span><span><i className="legend-dot legend-dot-energy" />Energy</span></div>
-  </div>
-)
-
-const average = (records, key) => {
-  const values = records.map((record) => Number(record[key])).filter((value) => Number.isFinite(value) && value > 0)
-  if (!values.length) return null
-  return values.reduce((sum, value) => sum + value, 0) / values.length
-}
-
-const makePoints = (records, key) => {
-  const available = records.map((record, index) => ({ index, value: Number(record[key]) })).filter((item) => Number.isFinite(item.value) && item.value > 0)
-  if (available.length < 2) return ''
-  const maxIndex = Math.max(records.length - 1, 1)
-  return available.map(({ index, value }) => {
-    const x = 44 + (index * 630) / maxIndex
-    const y = 158 - ((Math.min(Math.max(value, 1), 10) - 1) / 9) * 131
-    return `${x},${y}`
-  }).join(' ')
+  )
 }
 
 export default Insights

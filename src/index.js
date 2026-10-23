@@ -1,43 +1,20 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import { CssBaseline, ThemeProvider, createTheme } from '@mui/material'
-import { MotionConfig } from 'framer-motion'
-import i18next from 'i18next'
-import { initReactI18next } from 'react-i18next'
 
-import english from './locales/en.json'
+import './i18n'
 import App from './App'
+import SplashScreen from './components/SplashScreen'
+import { applyDocumentPreferences, loadPreferences } from './lib/care'
 import './styles/base.css'
 import './styles/index.css'
 import './styles/botanical.css'
-
-// Bundle English strings with the app so production never falls back to
-// untranslated camelCase keys when a separate locale request fails.
-i18next.use(initReactI18next).init({
-  resources: { en: { translation: english } },
-  lng: 'en',
-  fallbackLng: 'en',
-  debug: false,
-  initImmediate: false,
-  interpolation: { escapeValue: false },
-  parseMissingKeyHandler: (key) =>
-    key
-      .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
-      .replace(/[._]/g, ' ')
-      .replace(/\s+/g, ' ')
-      .trim(),
-})
+import './styles/journey.css'
 
 try {
-  const savedPreferences = JSON.parse(window.localStorage.getItem('hercycle.preferences') || '{}')
-  if (savedPreferences.theme === 'dark' || savedPreferences.theme === 'system') {
-    document.documentElement.setAttribute('data-theme', savedPreferences.theme)
-  }
-  if (['small', 'medium', 'large'].includes(savedPreferences.fontSize)) {
-    document.documentElement.setAttribute('data-font-size', savedPreferences.fontSize)
-  }
+  applyDocumentPreferences(loadPreferences())
 } catch {
-  // Browser storage may be disabled; use the accessible default theme.
+  // Browser storage may be restricted; defaults apply gracefully.
 }
 
 const theme = createTheme({
@@ -61,13 +38,11 @@ if (!container) {
 
 ReactDOM.createRoot(container).render(
   <React.StrictMode>
-    <React.Suspense fallback={<main className="configuration-message" role="status">Loading HerCycle…</main>}>
-      <MotionConfig reducedMotion="user">
-        <ThemeProvider theme={theme}>
-          <CssBaseline />
-          <App />
-        </ThemeProvider>
-      </MotionConfig>
+    <React.Suspense fallback={<SplashScreen visible variant="boot" />}>
+      <ThemeProvider theme={theme}>
+        <CssBaseline />
+        <App />
+      </ThemeProvider>
     </React.Suspense>
   </React.StrictMode>
 )

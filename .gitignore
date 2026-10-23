@@ -1,6 +1,7 @@
 # Dependencies and build artifacts
 /node_modules
 /build
+/.preview-static
 
 # Local environment and secrets
 .env

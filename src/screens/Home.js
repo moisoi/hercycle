@@ -1,13 +1,45 @@
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { Alert, Button, Skeleton } from '@mui/material'
 import { motion } from 'framer-motion'
-import { FiActivity, FiArrowRight, FiCalendar, FiDroplet, FiHeart, FiMessageCircle, FiPlus, FiShield } from 'react-icons/fi'
+import {
+  FiActivity,
+  FiArrowRight,
+  FiCalendar,
+  FiDroplet,
+  FiHeart,
+  FiMessageCircle,
+} from 'react-icons/fi'
 import { GiLotus } from 'react-icons/gi'
+import AutoAwesomeRoundedIcon from '@mui/icons-material/AutoAwesomeRounded'
+import LocalFloristRoundedIcon from '@mui/icons-material/LocalFloristRounded'
 import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 
+import BotanicalProgressRing from '../components/BotanicalProgressRing'
+import CardBurst from '../components/CardBurst'
+import Dashboard from '../components/Dashboard'
+import RotatingReminderText from '../components/RotatingReminderText'
+import { PrivacyShieldEmblem } from '../components/SplashScreen'
+import {
+  importGuestDataToAccount,
+  inspectLocalGuestData,
+  isGuestImportDismissed,
+  markGuestImportDismissed,
+} from '../lib/account'
+import { loadPreferences, loadUserCycles } from '../lib/care'
+import {
+  computeGardenProgress,
+  computeGardenResources,
+  loadJourneyState,
+} from '../lib/journey'
+import {
+  cycleDayFor,
+  estimatePeriodEndDate,
+  formatDisplayDate,
+  localDateString,
+} from '../lib/period'
+import { buildLittleReminderPool } from '../lib/reminders'
 import { supabase } from '../lib/supabase'
-import { estimatePeriodEndDate, formatPeriodDate, localDateString } from '../lib/period'
 
 const phaseDetails = {
   menstrual: { icon: '🌙', tint: 'rose' },
@@ -16,148 +48,199 @@ const phaseDetails = {
   luteal: { icon: '🌸', tint: 'lilac' },
 }
 
-const cheerByTone = {
-  playful: {
-    menstrual: 'Soft pace, cozy socks, and absolutely no gold stars required.',
-    follicular: 'Curiosity looks lovely on you. Follow one tiny spark today.',
-    ovulatory: 'Your glow is yours. Take up the space that feels good to you.',
-    luteal: 'One thing at a time, lovely. You are already doing enough.',
-    empty: 'Luna saved you the coziest little corner. Start wherever you are.',
-  },
-  balanced: {
-    menstrual: 'Rest is productive, love. You are doing beautifully.',
-    follicular: 'Let curiosity bloom. You can take one little step at a time.',
-    ovulatory: 'You have a glow all your own. Make space for what feels good to you.',
-    luteal: 'You do not have to do it all today. Be tender with yourself.',
-    empty: 'Luna is saving you a little space. Start wherever you are today.',
-  },
-  serious: {
-    menstrual: 'A slower pace may help today. Your needs deserve attention.',
-    follicular: 'Notice what feels interesting, and choose one small next step.',
-    ovulatory: 'Check in with yourself. Let your own comfort guide your day.',
-    luteal: 'You can lower the bar today. Rest and boundaries are valid choices.',
-    empty: 'Start with one honest check-in. There is no required way to feel.',
-  },
-}
-
-const dateLabel = (date) => new Intl.DateTimeFormat(undefined, { month: 'long', day: 'numeric' }).format(date)
-
 const Home = ({ session }) => {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const navigate = useNavigate()
+  const userId = session?.user?.id || null
+  const locale = String(i18n.language || 'en').startsWith('am') ? 'am' : 'en'
+
   const [cycles, setCycles] = useState([])
   const [settings, setSettings] = useState(null)
-  const [progress, setProgress] = useState(null)
-  const [isLoading, setIsLoading] = useState(Boolean(session?.user?.id))
+  const [prefs, setPrefs] = useState(() => loadPreferences())
+  const [journeyState, setJourneyState] = useState(() => loadJourneyState(userId))
+  const [isLoading, setIsLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
+  const [guestSummary, setGuestSummary] = useState(null)
+  const [importNotice, setImportNotice] = useState('')
+  const [gardenBurstKey, setGardenBurstKey] = useState(0)
+  const [statBursts, setStatBursts] = useState({ days: 0, mood: 0, insights: 0 })
 
-  useEffect(() => {
-    let isMounted = true
+  const gardenResources = useMemo(
+    () => computeGardenResources(journeyState, cycles.length),
+    [cycles.length, journeyState]
+  )
 
-    const loadDashboard = async () => {
-      if (!session?.user?.id) {
-        setIsLoading(false)
-        return
-      }
+  const refreshHome = useCallback(async () => {
+    setIsLoading(true)
+    setLoadError('')
+    try {
+      const loadedCycles = await loadUserCycles(userId)
+      setCycles(loadedCycles)
+      setJourneyState(loadJourneyState(userId))
 
-      setIsLoading(true)
-      const [cyclesResult, settingsResult, progressResult] = await Promise.all([
-        supabase
-          .from('cycles')
-          .select('id, phase, mood, libido, period, date, period_start_date, period_duration_days')
-          .eq('user_id', session.user.id)
-          .order('date', { ascending: false })
-          .limit(30),
-        supabase
+      if (userId && supabase) {
+        const { data: settingsRow } = await supabase
           .from('user_settings')
           .select('phase_selected, tone_preference')
-          .eq('user_id', session.user.id)
-          .maybeSingle(),
-        supabase
-          .from('user_progress')
-          .select('current_streak, total_coins, current_level')
-          .eq('user_id', session.user.id)
-          .maybeSingle(),
-      ])
+          .eq('user_id', userId)
+          .maybeSingle()
+        setSettings(settingsRow || null)
 
-      if (!isMounted) return
-
-      const firstError = cyclesResult.error || settingsResult.error || progressResult.error
-      if (firstError) {
-        console.error('Unable to load dashboard data:', firstError)
-        setLoadError('Some of your data could not be loaded. Please refresh in a moment.')
-      } else {
-        let resolvedSettings = settingsResult.data
-        if (!resolvedSettings) {
-          try {
-            const onboarding = JSON.parse(window.localStorage.getItem('hercycle.onboarding') || '{}')
-            const preferences = JSON.parse(window.localStorage.getItem('hercycle.preferences') || '{}')
-            if (onboarding.phase_selected) {
-              const { error: seedError } = await supabase.from('user_settings').upsert({
-                user_id: session.user.id,
-                onboarding_completed: true,
-                phase_selected: onboarding.phase_selected,
-                tone_preference: onboarding.tone_preference || 'balanced',
-                theme_preference: preferences.theme || 'light',
-                font_size: preferences.fontSize || 'medium',
-                hide_intimacy: Boolean(preferences.hideIntimacy),
-                updated_at: new Date().toISOString(),
-              }, { onConflict: 'user_id' })
-              if (seedError) throw seedError
-              resolvedSettings = {
-                phase_selected: onboarding.phase_selected,
-                tone_preference: onboarding.tone_preference || 'balanced',
-              }
-            }
-          } catch (seedError) {
-            console.warn('Could not sync initial account preferences:', seedError)
-          }
+        const localSummary = inspectLocalGuestData()
+        if (localSummary.hasGuestData && !isGuestImportDismissed(userId)) {
+          setGuestSummary(localSummary)
+        } else {
+          setGuestSummary(null)
         }
-        setCycles(cyclesResult.data || [])
-        setSettings(resolvedSettings)
-        setProgress(progressResult.data)
+      } else {
+        setGuestSummary(null)
       }
+    } catch (error) {
+      console.error('Unable to load dashboard data:', error)
+      setLoadError(t('errorGeneric'))
+    } finally {
       setIsLoading(false)
     }
+  }, [t, userId])
 
-    loadDashboard().catch((error) => {
-      console.error('Unable to load dashboard data:', error)
-      if (isMounted) {
-        setLoadError(t('errorGeneric'))
-        setIsLoading(false)
-      }
-    })
-
+  useEffect(() => {
+    refreshHome()
+    const onDataChanged = () => refreshHome()
+    const onPrefsChanged = () => setPrefs(loadPreferences())
+    window.addEventListener('hercycle:data-changed', onDataChanged)
+    window.addEventListener('hercycle:preferences-changed', onPrefsChanged)
     return () => {
-      isMounted = false
+      window.removeEventListener('hercycle:data-changed', onDataChanged)
+      window.removeEventListener('hercycle:preferences-changed', onPrefsChanged)
     }
-  }, [session?.user?.id, t])
+  }, [refreshHome])
 
-  const latestCheckIn = cycles[0]
+  const handleGuestImport = async (conflictStrategy) => {
+    if (!userId) return
+    try {
+      const result = await importGuestDataToAccount(supabase, userId, { conflictStrategy })
+      markGuestImportDismissed(userId)
+      setGuestSummary(null)
+      setImportNotice(
+        t('guestImportDone', { count: result.importedCycles + result.importedIntimacy })
+      )
+      await refreshHome()
+    } catch (error) {
+      setLoadError(error.message || t('errorGeneric'))
+    }
+  }
+
+  const dismissGuestImport = () => {
+    if (userId) markGuestImportDismissed(userId)
+    setGuestSummary(null)
+  }
+
+  const latestCheckIn = cycles[0] || null
   const todayDate = localDateString()
-  const currentPeriodPrediction = cycles.find((entry) => {
-    const endDate = estimatePeriodEndDate(entry.period_start_date, entry.period_duration_days)
-    return Boolean(entry.period_start_date && endDate && entry.period_start_date <= todayDate && endDate >= todayDate)
-  })
+  const activeCycleDay = useMemo(() => cycleDayFor(cycles, todayDate), [cycles, todayDate])
+
+  const currentPeriodPrediction = useMemo(
+    () =>
+      cycles.find((entry) => {
+        const endDate = estimatePeriodEndDate(entry.period_start_date, entry.period_duration_days)
+        return Boolean(
+          entry.period_start_date &&
+            endDate &&
+            entry.period_start_date <= todayDate &&
+            endDate >= todayDate
+        )
+      }),
+    [cycles, todayDate]
+  )
+
   let localOnboarding = {}
   try {
     localOnboarding = JSON.parse(window.localStorage.getItem('hercycle.onboarding') || '{}')
   } catch {
     localOnboarding = {}
   }
+
   const onboardingPhase = localOnboarding.phase_selected || null
   const activePhase = latestCheckIn?.phase || settings?.phase_selected || onboardingPhase
   const phaseInfo = activePhase ? phaseDetails[activePhase] : null
   const tone = settings?.tone_preference || localOnboarding.tone_preference || 'balanced'
-  const cheerMessage = cheerByTone[tone]?.[activePhase || 'empty'] || cheerByTone.balanced[activePhase || 'empty']
+
+  const littleReminderPool = useMemo(
+    () =>
+      buildLittleReminderPool({
+        tone,
+        phase: activePhase || '',
+        locale,
+      }),
+    [activePhase, locale, tone]
+  )
+
   const averageMood = useMemo(() => {
-    const values = cycles.map((entry) => Number(entry.mood)).filter(Number.isFinite)
+    const values = cycles
+      .map((entry) => Number(entry.mood))
+      .filter((v) => Number.isFinite(v) && v > 0)
     return values.length ? Math.round(values.reduce((sum, value) => sum + value, 0) / values.length) : null
   }, [cycles])
 
+  const garden = useMemo(
+    () => computeGardenProgress(journeyState, cycles.length),
+    [cycles.length, journeyState]
+  )
+
+  const reduceMotion = Boolean(prefs.reduceMotion)
+
   return (
     <div className="dashboard-page">
-      {loadError && <Alert severity="warning" className="dashboard-alert">{loadError}</Alert>}
+      {loadError && (
+        <Alert severity="warning" className="dashboard-alert">
+          {loadError}
+        </Alert>
+      )}
+      {importNotice && (
+        <Alert severity="success" className="dashboard-alert" onClose={() => setImportNotice('')}>
+          {importNotice}
+        </Alert>
+      )}
+
+      {guestSummary && (
+        <section className="hc-guest-import-banner hc-spotlight-card" data-testid="guest-import-banner">
+          <div>
+            <strong>{t('guestImportTitle')}</strong>
+            <p>
+              {t('guestImportBody', {
+                cycleCount: guestSummary.cycleCount,
+                intimacyCount: guestSummary.intimacyCount,
+              })}
+            </p>
+          </div>
+          <div className="hc-guest-import-actions">
+            <Button
+              type="button"
+              size="small"
+              variant="contained"
+              disableElevation
+              className="form-submit-button hc-spotlight-btn"
+              onClick={() => handleGuestImport('keep_account')}
+            >
+              {t('guestImportKeepAccount')}
+            </Button>
+            <button
+              type="button"
+              className="partner-copy-button hc-spotlight-btn"
+              onClick={() => handleGuestImport('prefer_device')}
+            >
+              {t('guestImportPreferDevice')}
+            </button>
+            <button
+              type="button"
+              className="hc-link-muted"
+              onClick={dismissGuestImport}
+            >
+              {t('guestImportDismiss')}
+            </button>
+          </div>
+        </section>
+      )}
 
       <motion.section
         className="dashboard-welcome-row"
@@ -166,137 +249,416 @@ const Home = ({ session }) => {
         transition={{ duration: 0.35, ease: 'easeOut' }}
       >
         <div>
-          <span className="eyebrow-label">A NOTE FROM YOUR BODY</span>
+          <span className="eyebrow-label">{t('noteFromBody')}</span>
           <h2>{t('goodMorning')}</h2>
           <p>{t('dashboardDescription')}</p>
         </div>
-        <div className="dashboard-date-badge"><FiCalendar aria-hidden="true" /> {dateLabel(new Date())}</div>
+        <div className="dashboard-date-badge">
+          <FiCalendar aria-hidden="true" /> {formatDisplayDate(todayDate, locale)}
+        </div>
       </motion.section>
 
       <div className="dashboard-feature-grid">
         <motion.section
-          className={`phase-spotlight${phaseInfo ? ` phase-spotlight-${phaseInfo.tint}` : ' phase-spotlight-quiet'}`}
+          className={`phase-spotlight hc-spotlight-card${
+            phaseInfo ? ` phase-spotlight-${phaseInfo.tint}` : ' phase-spotlight-quiet'
+          }`}
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.4, delay: 0.05 }}
         >
           <div className="phase-spotlight-topline">
             <span>{t('cycleSpotlight')}</span>
-            <span className="phase-spotlight-orbit" aria-hidden="true">{phaseInfo?.icon || '✧'}</span>
+            <span className="phase-spotlight-orbit" aria-hidden="true">
+              {phaseInfo?.icon || '✧'}
+            </span>
           </div>
           {isLoading ? (
-            <div className="dashboard-skeleton-group"><Skeleton width="55%" height={46} /><Skeleton width="90%" /><Skeleton width="70%" /></div>
+            <div className="dashboard-skeleton-group">
+              <Skeleton width="55%" height={46} />
+              <Skeleton width="90%" />
+              <Skeleton width="70%" />
+            </div>
           ) : activePhase ? (
             <>
               <div className="phase-label-row">
-                <span className="phase-symbol" aria-hidden="true">{phaseInfo?.icon}</span>
+                <span className="phase-symbol" aria-hidden="true">
+                  {phaseInfo?.icon}
+                </span>
                 <span className="phase-name">{t(`phase.${activePhase}`)}</span>
+                {activeCycleDay ? (
+                  <span className="hc-cycle-day-pill">
+                    {t('cycleDayBadge', { day: activeCycleDay })}
+                  </span>
+                ) : null}
               </div>
               <p className="phase-description">{t(`phaseDescription.${activePhase}`)}</p>
               <p className="phase-meta">
-                {latestCheckIn ? `${t('lastCheckIn')}: ${dateLabel(new Date(`${latestCheckIn.date}T12:00:00`))}` : t('noCheckIns')}
+                {latestCheckIn
+                  ? `${t('lastCheckIn')}: ${formatDisplayDate(latestCheckIn.date, locale)}`
+                  : t('noCheckIns')}
               </p>
             </>
           ) : (
             <>
               <div className="phase-label-row">
-                <span className="phase-symbol phase-symbol-empty" aria-hidden="true">✧</span>
-                <span className="phase-name">Your rhythm, your way</span>
+                <span className="phase-symbol phase-symbol-empty" aria-hidden="true">
+                  ✧
+                </span>
+                <span className="phase-name">{t('rhythmYourWay')}</span>
               </div>
-              <p className="phase-description">Your first check-in can be as simple as choosing how today feels.</p>
-              <p className="phase-meta">No predictions. Just a little more self-understanding.</p>
+              <p className="phase-description">{t('rhythmEmptyDesc')}</p>
+              <p className="phase-meta">{t('rhythmEmptyMeta')}</p>
             </>
           )}
-          <Button className="phase-spotlight-button" onClick={() => navigate('/log')} endIcon={<FiArrowRight aria-hidden="true" />}>
-            {activePhase ? t('logToday') : t('startFirstCheckIn')}
+          <Button
+            variant="outlined"
+            className="phase-spotlight-button hc-spotlight-btn"
+            onClick={() => navigate('/log')}
+            endIcon={<FiArrowRight aria-hidden="true" />}
+          >
+            {cycles.length ? t('logToday') : t('startFirstCheckIn')}
           </Button>
         </motion.section>
 
         <motion.section
-          className="mascot-card"
+          className="mascot-card hc-spotlight-card"
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.4, delay: 0.12 }}
+          transition={{ duration: 0.4, delay: 0.1 }}
+          data-testid="home-little-reminder"
         >
-          <div className="mascot-card-topline"><span>YOUR LITTLE REMINDER</span><span className="mascot-card-sparkle">✦</span></div>
-          <div className="mascot-illustration" aria-hidden="true">
-            <span className="mascot-halo" />
-            <GiLotus className="mascot-lotus" />
-            <span className="mascot-orbit-dot mascot-orbit-dot-one">✦</span>
-            <span className="mascot-orbit-dot mascot-orbit-dot-two">✧</span>
+          <div className="mascot-card-topline">
+            <span className="mascot-card-kicker">{t('littleReminderLabel')}</span>
+            <span className="mascot-card-pulse" aria-hidden="true">
+              <i />
+              <span>✦</span>
+            </span>
           </div>
-          <p className="mascot-name">Luna says</p>
-          <p className="mascot-message">{cheerMessage}</p>
-          <span className="mascot-signoff">with a little love <span aria-hidden="true">♡</span></span>
+
+          <div className="mascot-card-center">
+            <motion.div
+              className="mascot-illustration"
+              animate={{ y: [0, -4, 0] }}
+              transition={{ duration: 4.8, repeat: Infinity, ease: 'easeInOut' }}
+              aria-hidden="true"
+            >
+              <div className="mascot-halo" />
+              <div className="mascot-halo-inner" />
+              <GiLotus className="mascot-lotus" />
+              <span className="mascot-spark mascot-spark-left">✦</span>
+              <span className="mascot-spark mascot-spark-right">✧</span>
+            </motion.div>
+
+            <div className="hc-mascot-rotating-wrap">
+              <RotatingReminderText
+                as="p"
+                className="mascot-message"
+                messages={littleReminderPool}
+                intervalMs={5000}
+              />
+            </div>
+          </div>
+
+          <span className="mascot-signature">
+            <span className="mascot-signature-star" aria-hidden="true">
+              ✦
+            </span>
+            <span className="mascot-signature-lead">{t('lunaSays')}</span>
+            <span className="mascot-signature-dot" aria-hidden="true">
+              ·
+            </span>
+            <em>{t('withLove')}</em>
+          </span>
         </motion.section>
       </div>
 
       {currentPeriodPrediction && (
-        <section className="period-prediction-card" aria-label={t('periodEstimateTitle')}>
-          <span className="period-prediction-icon"><FiDroplet aria-hidden="true" /></span>
+        <section className="period-prediction-card hc-spotlight-card">
+          <div className="period-prediction-icon" aria-hidden="true">
+            <FiDroplet />
+          </div>
           <div>
             <span className="eyebrow-label">{t('periodEstimateTitle')}</span>
-            <strong>{t('periodEstimateEnds', { date: formatPeriodDate(estimatePeriodEndDate(currentPeriodPrediction.period_start_date, currentPeriodPrediction.period_duration_days)) })}</strong>
+            <strong>
+              {t('periodEstimateEnds', {
+                date: formatDisplayDate(
+                  estimatePeriodEndDate(
+                    currentPeriodPrediction.period_start_date,
+                    currentPeriodPrediction.period_duration_days
+                  ),
+                  locale
+                ),
+              })}
+            </strong>
             <p>{t('periodEstimateDashboardNote')}</p>
           </div>
         </section>
       )}
 
-      <section className="dashboard-stats" aria-label="Your recent activity">
-        <div className="stat-card">
-          <span className="stat-icon stat-icon-rose"><FiActivity aria-hidden="true" /></span>
-          <div><span className="stat-label">{t('checkInCount')}</span><strong>{isLoading ? '—' : cycles.length}</strong></div>
-          <small>last 30 days</small>
-        </div>
-        <div className="stat-card">
-          <span className="stat-icon stat-icon-sage"><FiHeart aria-hidden="true" /></span>
-          <div><span className="stat-label">{t('averageMood')}</span><strong>{isLoading ? '—' : averageMood ? `${averageMood}/10` : '—'}</strong></div>
-          <small>{averageMood ? 'from your check-ins' : 'when you are ready'}</small>
-        </div>
-        <div className="stat-card stat-card-action" role="button" tabIndex={0} aria-label="Explore your personal insights" onClick={() => navigate('/insights')} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); navigate('/insights') } }}>
-          <span className="stat-icon stat-icon-lilac"><FiPlus aria-hidden="true" /></span>
-          <div><span className="stat-label">A small next step</span><strong>Explore patterns</strong><small>{progress?.current_streak ? `${progress.current_streak} ${t('dayStreak')}` : 'No streaks required'}</small></div>
-          <FiArrowRight className="stat-arrow" aria-hidden="true" />
-        </div>
-      </section>
+      {prefs.journeyEnabled !== false && (
+        <motion.section
+          className="hc-garden-home-card hc-spotlight-card"
+          style={{ position: 'relative' }}
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          data-testid="home-garden-card"
+        >
+          <CardBurst burstKey={gardenBurstKey} disabled={reduceMotion} />
+
+          <div className="hc-garden-home-copy">
+            <div className="hc-garden-home-pills">
+              <span className="eyebrow-label hc-garden-eyebrow">
+                <LocalFloristRoundedIcon sx={{ fontSize: 13 }} />
+                {t('gardenHomeEyebrow')}
+              </span>
+              <span className="hc-garden-pill">
+                {t('gardenSeedsResource', { count: gardenResources.availableSeeds })}
+              </span>
+              <span className="hc-garden-pill hc-water-pill">
+                <FiDroplet aria-hidden="true" />
+                {t('gardenWaterResource', { count: gardenResources.availableWater })}
+              </span>
+            </div>
+
+            <h3>{t('gardenHomeTitle')}</h3>
+            <p className="hc-garden-home-desc">{t('gardenHomeBody')}</p>
+
+            <div className="hc-garden-home-meta">
+              <BotanicalProgressRing
+                stage={garden.stage}
+                progressPercent={garden.progressPercent}
+                seeds={garden.points}
+                size={80}
+              />
+              <div className="hc-garden-home-stage-info">
+                <div className="hc-garden-stage-head">
+                  <strong>
+                    {locale === 'am'
+                      ? garden.currentStage.amTitle || garden.currentStage.nameAm
+                      : garden.currentStage.enTitle || garden.currentStage.nameEn}
+                  </strong>
+                  <em>{garden.progressPercent}%</em>
+                </div>
+                <div className="hc-garden-progress-bar" aria-hidden="true">
+                  <span style={{ width: `${Math.max(10, garden.progressPercent)}%` }} />
+                </div>
+                <span className="hc-garden-next-caption">
+                  {garden.nextStage
+                    ? t('gardenNextStage', {
+                        name:
+                          locale === 'am'
+                            ? garden.nextStage.amTitle || garden.nextStage.nameAm
+                            : garden.nextStage.enTitle || garden.nextStage.nameEn,
+                        percent: garden.progressPercent,
+                      })
+                    : t('gardenFullBloom')}
+                </span>
+              </div>
+            </div>
+
+            <div className="hc-garden-home-actions">
+              <Button
+                type="button"
+                size="small"
+                variant="outlined"
+                className="phase-spotlight-button hc-spotlight-btn"
+                endIcon={<FiArrowRight aria-hidden="true" />}
+                onClick={() => {
+                  setGardenBurstKey((prev) => prev + 1)
+                  window.setTimeout(() => navigate('/journey'), 240)
+                }}
+              >
+                {t('gardenOpenCta')}
+              </Button>
+            </div>
+          </div>
+
+          {/* Luxury Conservatory Hold Card: only the garden illustration is scheduled for the next update */}
+          <div
+            className="hc-garden-upcoming-card is-compact"
+            data-testid="home-garden-upcoming-card"
+            role="button"
+            tabIndex={0}
+            aria-label={t('gardenOpenCta')}
+            onClick={() => {
+              setGardenBurstKey((prev) => prev + 1)
+              window.setTimeout(() => navigate('/journey'), 240)
+            }}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault()
+                navigate('/journey')
+              }
+            }}
+          >
+            <span className="hc-garden-upcoming-badge">
+              <AutoAwesomeRoundedIcon sx={{ fontSize: 13 }} />
+              <span>{t('gardenUpcomingBadge')}</span>
+            </span>
+            <div className="hc-garden-upcoming-emblem" aria-hidden="true">
+              <GiLotus />
+            </div>
+            <strong>{t('gardenUpcomingTitle')}</strong>
+            <p>{t('gardenUpcomingShortBody')}</p>
+          </div>
+        </motion.section>
+      )}
+
+      <Dashboard
+        latestEntry={latestCheckIn}
+        cycleDay={activeCycleDay}
+        seeds={garden.points}
+        stage={garden.stage}
+        onQuickLog={() => navigate('/log')}
+      />
 
       <motion.section
-        className="luna-home-invitation"
-        initial={{ opacity: 0, y: 10 }}
+        className="luna-home-invitation hc-spotlight-card"
+        initial={{ opacity: 0, y: 12 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.32, delay: 0.16 }}
+        transition={{ duration: 0.35, delay: 0.14 }}
       >
-        <span className="luna-home-invitation-icon" aria-hidden="true"><GiLotus /><i>✦</i></span>
+        <div className="luna-home-invitation-icon" aria-hidden="true">
+          <GiLotus />
+          <i>✦</i>
+        </div>
         <div className="luna-home-invitation-copy">
           <span>{t('lunaHomeEyebrow')}</span>
           <strong>{t('lunaHomeHeading')}</strong>
           <p>{t('lunaHomeDescription')}</p>
         </div>
-        <button type="button" className="luna-home-invitation-button" onClick={() => navigate('/luna')}>
-          <FiMessageCircle aria-hidden="true" /> <span>{t('lunaHomeButton')}</span> <FiArrowRight aria-hidden="true" />
+        <button
+          type="button"
+          className="luna-home-invitation-button hc-spotlight-btn"
+          onClick={() => navigate('/luna')}
+        >
+          <FiMessageCircle aria-hidden="true" />
+          <span>{t('lunaHomeButton')}</span>
         </button>
       </motion.section>
 
-      {!session && (
-        <motion.section className="private-sync-banner" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-          <span className="private-sync-icon"><FiShield aria-hidden="true" /></span>
-          <div><strong>Your space is ready when you are.</strong><p>Sign in to save your private check-ins and see them on your other devices.</p></div>
-          <Button onClick={() => navigate('/auth')} endIcon={<FiArrowRight aria-hidden="true" />}>{t('signIn')}</Button>
-        </motion.section>
-      )}
-
-      {session && !cycles.length && !isLoading && (
+      <section className="dashboard-stats" aria-label={t('yourPatterns')}>
         <motion.button
           type="button"
-          className="first-checkin-card"
-          onClick={() => navigate('/log')}
-          initial={{ opacity: 0, y: 8 }}
-          animate={{ opacity: 1, y: 0 }}
+          className="stat-card stat-card-action hc-spotlight-card"
+          style={{ position: 'relative' }}
+          onClick={() => {
+            setStatBursts((prev) => ({ ...prev, days: prev.days + 1 }))
+            window.setTimeout(() => navigate('/log'), 220)
+          }}
+          whileHover={{ y: -3 }}
+          whileTap={{ scale: 0.99 }}
         >
-          <span className="first-checkin-icon"><FiPlus aria-hidden="true" /></span>
-          <span><strong>Your first check-in is waiting</strong><small>It takes less than a minute, and you can skip any question.</small></span>
-          <FiArrowRight className="first-checkin-arrow" aria-hidden="true" />
+          <CardBurst burstKey={statBursts.days} disabled={reduceMotion} />
+          <span className="stat-icon stat-icon-rose">
+            <FiDroplet aria-hidden="true" />
+          </span>
+          <div className="hc-stat-card-body">
+            <span className="stat-label">{t('daysTracked')}</span>
+            <strong>{isLoading ? '—' : cycles.length}</strong>
+            <div className="hc-metric-bar hc-metric-bar-rose" aria-hidden="true">
+              <span style={{ width: `${Math.min(100, Math.max(12, cycles.length * 10))}%` }} />
+            </div>
+            <small>{t('last30Days')}</small>
+          </div>
+          <FiArrowRight className="stat-arrow" aria-hidden="true" />
         </motion.button>
+
+        <motion.button
+          type="button"
+          className="stat-card stat-card-action hc-spotlight-card"
+          style={{ position: 'relative' }}
+          onClick={() => {
+            setStatBursts((prev) => ({ ...prev, mood: prev.mood + 1 }))
+            window.setTimeout(() => navigate('/log'), 220)
+          }}
+          whileHover={{ y: -3 }}
+          whileTap={{ scale: 0.99 }}
+        >
+          <CardBurst burstKey={statBursts.mood} disabled={reduceMotion} />
+          <span className="stat-icon stat-icon-sage">
+            <FiHeart aria-hidden="true" />
+          </span>
+          <div className="hc-stat-card-body">
+            <span className="stat-label">{t('mood')}</span>
+            <strong>{isLoading ? '—' : averageMood ? `${averageMood}/10` : '—'}</strong>
+            <div className="hc-metric-bar hc-metric-bar-sage" aria-hidden="true">
+              <span style={{ width: `${averageMood ? Math.min(100, averageMood * 10) : 14}%` }} />
+            </div>
+            <small>{averageMood ? t('fromYourCheckIns') : t('whenYouAreReady')}</small>
+          </div>
+          <FiArrowRight className="stat-arrow" aria-hidden="true" />
+        </motion.button>
+
+        <motion.button
+          type="button"
+          className="stat-card stat-card-action hc-spotlight-card"
+          style={{ position: 'relative' }}
+          onClick={() => {
+            setStatBursts((prev) => ({ ...prev, insights: prev.insights + 1 }))
+            window.setTimeout(() => navigate('/insights'), 220)
+          }}
+          whileHover={{ y: -3 }}
+          whileTap={{ scale: 0.99 }}
+        >
+          <CardBurst burstKey={statBursts.insights} disabled={reduceMotion} />
+          <span className="stat-icon stat-icon-lilac">
+            <FiActivity aria-hidden="true" />
+          </span>
+          <div className="hc-stat-card-body">
+            <span className="stat-label">{t('insights')}</span>
+            <strong>{t('explorePatterns')}</strong>
+            <div className="hc-metric-bar hc-metric-bar-lilac" aria-hidden="true">
+              <span style={{ width: '68%' }} />
+            </div>
+            <small>{t('noStreaksRequired')}</small>
+          </div>
+          <FiArrowRight className="stat-arrow" aria-hidden="true" />
+        </motion.button>
+      </section>
+
+      {!session && (
+        <section className="private-sync-banner hc-spotlight-card">
+          <PrivacyShieldEmblem />
+          <div className="hc-banner-body">
+            <div className="hc-privacy-kicker-row">
+              <span className="hc-privacy-status-dot" aria-hidden="true" />
+              <span className="eyebrow-label">{t('privateSpace')}</span>{' '}
+              <span className="hc-privacy-chip">{t('savedOnDevice')}</span>
+            </div>
+            <strong>{t('spaceReadyTitle')}</strong> <p>{t('spaceReadyBody')}</p>
+          </div>
+          <Button
+            variant="outlined"
+            onClick={() => navigate('/signin', { state: { from: '/' } })}
+            className="hc-privacy-signin-btn hc-spotlight-btn"
+          >
+            {t('signIn')}
+          </Button>
+        </section>
+      )}
+
+      {!isLoading && cycles.length === 0 && (
+        <section className="first-checkin-card hc-spotlight-card">
+          <div className="hc-first-checkin-badge" aria-hidden="true">
+            <AutoAwesomeRoundedIcon sx={{ fontSize: 20 }} />
+          </div>
+          <div className="hc-banner-body">
+            <span className="eyebrow-label">{t('noStreaksRequired')}</span>
+            <h3>{t('firstCheckInWaiting')}</h3>
+            <p>{t('firstCheckInSub')}</p>
+          </div>
+          <Button
+            variant="contained"
+            disableElevation
+            className="form-submit-button hc-spotlight-btn"
+            endIcon={<FiArrowRight aria-hidden="true" />}
+            onClick={() => navigate('/log')}
+          >
+            {t('logToday')}
+          </Button>
+        </section>
       )}
     </div>
   )

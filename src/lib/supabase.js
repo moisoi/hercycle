@@ -1,5 +1,29 @@
 import { createClient } from '@supabase/supabase-js'
 
+const cleanConfigValue = (value) =>
+  String(value || '')
+    .trim()
+    .replace(/^['"`]+|['"`]+$/g, '')
+    .trim()
+
+export const isPublicClientKey = (value) => {
+  const key = cleanConfigValue(value)
+  if (!key || /your-project|your-supabase|placeholder/i.test(key)) return false
+  if (/^sb_secret_/i.test(key) || /service_role/i.test(key)) return false
+  if (/^sb_publishable_[A-Za-z0-9_.-]+$/i.test(key)) return true
+
+  const parts = key.split('.')
+  if (parts.length !== 3) return false
+  try {
+    const base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/')
+    const decoded = atob(base64.padEnd(Math.ceil(base64.length / 4) * 4, '='))
+    const payload = JSON.parse(decoded)
+    return payload?.role === 'anon'
+  } catch {
+    return false
+  }
+}
+
 const buildSupabaseUrl = process.env.REACT_APP_SUPABASE_URL
 const buildSupabaseKey =
   process.env.REACT_APP_SUPABASE_KEY || process.env.REACT_APP_SUPABASE_ANON_KEY
@@ -9,11 +33,11 @@ export let isSupabaseConfigured = Boolean(supabase)
 
 let runtimeConfigPromise = null
 
-// Cloudflare Pages can provide these values as Pages Function runtime variables.
-// In local CRA development, optional REACT_APP_* build variables work directly.
-export const initializeSupabase = () => {
+// Cloudflare Pages provides runtime variables through /api/config.
+// Allow safe retries when forceRetry is requested or when a prior attempt failed.
+export const initializeSupabase = ({ forceRetry = false } = {}) => {
   if (supabase) return Promise.resolve(supabase)
-  if (runtimeConfigPromise) return runtimeConfigPromise
+  if (runtimeConfigPromise && !forceRetry) return runtimeConfigPromise
 
   runtimeConfigPromise = (async () => {
     if (typeof window === 'undefined' || typeof window.fetch !== 'function') return null
@@ -26,16 +50,27 @@ export const initializeSupabase = () => {
         headers: { Accept: 'application/json' },
       })
       const contentType = response.headers.get('content-type') || ''
-      if (!response.ok || !contentType.includes('application/json')) return null
+      if (!response.ok || !contentType.includes('application/json')) {
+        runtimeConfigPromise = null
+        return null
+      }
 
       const config = await response.json()
-      if (config?.configured !== true) return null
+      if (config?.configured !== true) {
+        runtimeConfigPromise = null
+        return null
+      }
 
-      supabase = createConfiguredClient(config.supabaseUrl, config.anonKey)
-      isSupabaseConfigured = Boolean(supabase)
+      const client = createConfiguredClient(config.supabaseUrl, config.anonKey)
+      if (!client) {
+        runtimeConfigPromise = null
+        return null
+      }
+      supabase = client
+      isSupabaseConfigured = true
       return supabase
     } catch {
-      // The CRA dev server does not run Pages Functions; guest mode still works.
+      runtimeConfigPromise = null
       return null
     }
   })()
@@ -43,10 +78,11 @@ export const initializeSupabase = () => {
   return runtimeConfigPromise
 }
 
-function createConfiguredClient(urlValue, keyValue) {
-  const url = String(urlValue || '').trim()
-  const key = String(keyValue || '').trim()
+export function createConfiguredClient(urlValue, keyValue) {
+  const url = cleanConfigValue(urlValue)
+  const key = cleanConfigValue(keyValue)
   if (!url || !key || /your-project|your-supabase|placeholder/i.test(url + key)) return null
+  if (!isPublicClientKey(key)) return null
 
   try {
     const parsedUrl = new URL(url)

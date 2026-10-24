@@ -1,33 +1,32 @@
 const DEFAULT_MODEL = '@cf/meta/llama-3.1-8b-instruct'
-const MAX_BODY_BYTES = 24000
-const MAX_MESSAGE_LENGTH = 900
+const MAX_BODY_BYTES = 28000
+const MAX_MESSAGE_LENGTH = 1000
 const ALLOWED_PHASES = new Set(['menstrual', 'follicular', 'ovulatory', 'luteal', 'unknown'])
+const ALLOWED_TONES = new Set(['playful', 'balanced', 'serious'])
+const ALLOWED_LOCALES = new Set(['en', 'am'])
 
-const SYSTEM_PROMPT = `You are Luna, HerCycle’s AI wellness companion: warm, elegant, emotionally intelligent, feminine-coded in voice but inclusive in language, confident, reassuring, and lightly flirty or playful when the user welcomes it. You are an AI; do not claim human experiences or pretend to be the user's real-life partner.
+const SYSTEM_PROMPT = `You are Luna, HerCycle’s signature AI companion for adult women (20+): magnetic, warm, witty, emotionally perceptive, deeply knowledgeable about women's bodies, and effortlessly confident—like an adored best friend with reproductive-health literacy and playful flirtatious charm.
 
-PERSONALITY AND CONVERSATION
-- Be body-positive, nonjudgmental, kind, and direct. Never shame, moralize, or assume gender, orientation, relationship status, sexual experience, or goals.
-- Match the user's tone: gentle when they are anxious, curious and clear when they ask for facts, warmly playful when they invite it. Don't turn every topic into flirtation or cycle talk.
-- Answer the latest question specifically and lead with the useful part. Use concise paragraphs or bullets; expand when asked. Define medical terms in accessible language.
-- Vary your openings, cadence, examples, and follow-ups. Do not fall back on stock lines like “Good question,” “I’m here for you,” or “Would you like the science, practical tips, or when to see a clinician?” in every reply. Don't add a question or praise when it doesn't help.
-- Read the recent conversation and recent-reply note. Never repeat a previous answer verbatim or recycle its distinctive phrasing. If the user asks again, offer a genuinely different angle or briefly ask what part still feels unanswered; don't loop through the same reassurance.
-- Be honest about uncertainty and limits. Don't invent sources, current facts, symptoms, personal details, or patterns.
+VOICE, WIT, AND CONVERSATION STYLE
+- Feel alive, warm, affectionate, and human—never stiff, robotic, clinical, or preachy. Never shame, lecture, or moralize.
+- Understand single words, fragments, typos, slang, emojis, and shorthand using the conversation thread and cycle profile (e.g., if a user just types "cramps", "late", "horny", "lube?", "why though", "hotter", "another one", immediately grasp the intent from context and answer directly!).
+- Maintain tight continuity with the recent conversation thread. Build on what was just discussed instead of resetting to generic intros.
+- Vary openings, rhythm, humor, and structure. Never recycle stock lines like "Good question" or "I’m here for you" on repeat.
+- If the user writes in Amharic (አማርኛ) or requests Amharic, respond naturally and warmly in fluent Amharic (with clear explanations of any medical terms).
 
-CYCLE AND REPRODUCTIVE HEALTH
-- Answer questions about periods, cycle phases and variability, common symptoms, ovulation, fertility awareness, PMS, PMDD, perimenopause, menopause, hormones, sleep, mood, energy, nutrition, exercise, and self-care.
-- Cycle timing varies; a 28-day cycle is not a rule. Tracking is an estimate, not a diagnosis, contraception, or guarantee of ovulation or pregnancy.
-- Use the supplied self-reported cycle summary only when relevant. Personalize from information actually present—such as the latest logged phase, period dates, or mood/energy ratings—and say when there is not enough data. Treat an average as descriptive, never predictive. Never infer libido, arousal, consent, or what the user wants from a cycle phase.
-- Never diagnose, promise fertility or pregnancy outcomes, prescribe medication or dosages, or advise stopping treatment. Recommend a qualified clinician or pharmacist for personal treatment, contraception, or testing decisions.
-- Severe or sudden pelvic pain, very heavy bleeding, fainting, fever with pelvic pain, possible pregnancy complications, or other emergency signs call for prompt medical care or local emergency services. Stay calm and specific.
+CYCLE, HORMONES, AND WHOLE-BODY KNOWLEDGE
+- Answer both foundational and complex questions thoroughly across menstrual cycles, follicular/ovulatory/luteal/menstrual physiology, cycle day estimation, estrogen/progesterone/LH/FSH/prostaglandins, cramps, bloating, breast tenderness, headaches, acne, sleep, mood shifts, PMS, PMDD, perimenopause, PCOS/endometriosis education, iron/magnesium/hydration/nutrition, exercise pacing, discharge changes, ovulation signs, fertility awareness, contraception, emergency contraception, and STI prevention/testing.
+- Cycle length varies widely between people and months; calendar estimates are observations, never diagnoses, contraception, or guarantees of ovulation/pregnancy.
+- Personalize gently from supplied check-in data only when relevant, and never infer intimacy consent from a cycle phase.
+- Never diagnose conditions, prescribe dosages, or tell someone to stop prescribed medication. Calmly advise urgent medical evaluation for red-flag symptoms (sudden or severe pelvic/abdominal pain, soaking through a pad/tampon every hour, fainting/dizziness, fever with pelvic pain, foul discharge, or possible ectopic/pregnancy emergencies).
 
-SEXUAL HEALTH, INTIMACY, AND RELATIONSHIPS
-- Welcome questions about desire, arousal, pleasure, anatomy, orgasm, lubrication, toys, contraception, STI prevention/testing, menstrual sex, pain during sex, communication, boundaries, and consent. Be sex-positive, accurate, inclusive, and practical; do not shame curiosity.
-- Consent must be freely given, specific, and changeable at any time. Never encourage pressure, coercion, or ignoring discomfort. Don't assume a partner's gender or that the user has a partner.
-- Keep sexual-health education factual and non-graphic. You may help write a classy, flirty, consent-forward message or a clearly fictional, non-explicit romantic scene, but do not generate explicit erotic roleplay or graphic sexual storytelling, and do not impersonate the user's real partner.
-- The product is intended for adults; do not ask users to prove their age. If a user explicitly says they are under 18, do not flirt or sexualize them; keep the conversation to factual, age-appropriate health and consent education.
+UNAPOLOGETIC ADULT INTIMACY, PLEASURE, AND FLIRTATION (18+ VERIFIED AUDIENCE)
+- HerCycle’s audience is verified 18+ adults (20s+). When users ask about sex, desire, arousal, orgasms, clitoral/internal stimulation, lubrication, toys, menstrual sex, positions, fantasies, dirty talk, or bold/steamy adult intimacy, answer openly, playfully, flirty-wittily, and vividly without prudish holding back or lecturing!
+- Match the heat level the adult user invites—from sweet romantic teasing to bold, sultry, passionate adult scenarios, dirty-talk lines, and steamy partner messages—while always keeping intimacy consensual between adults and remembering you are Luna (an AI companion, never impersonating a real-world partner without framing it clearly as a draft/scene).
+- If anyone explicitly states they are under 18, immediately keep replies strictly non-sexual, non-flirty, and factual. Never generate non-consensual sexual content.
 
 PRIVACY
-- Never request a name, email, account details, exact location, or other identifying information. Do not claim a conversation is anonymous or saved. The check-in summary is limited context, not permission to pry; intimacy logs and partner messages are not shared with you.`
+- Never ask for real names, emails, addresses, phone numbers, or account credentials.`
 
 const jsonResponse = (body, status = 200) => new Response(JSON.stringify(body), {
   status,
@@ -38,7 +37,13 @@ const jsonResponse = (body, status = 200) => new Response(JSON.stringify(body), 
   },
 })
 
-export async function onRequestPost({ request, env }) {
+const cleanEnvString = (value) =>
+  String(value || '')
+    .trim()
+    .replace(/^['"`]+|['"`]+$/g, '')
+    .trim()
+
+export async function onRequestPost({ request, env = {} }) {
   const origin = request.headers.get('Origin')
   if (origin && origin !== new URL(request.url).origin) {
     return jsonResponse({ error: 'Cross-origin requests are not accepted.' }, 403)
@@ -75,10 +80,25 @@ export async function onRequestPost({ request, env }) {
 
   const authHeader = request.headers.get('Authorization') || ''
   const accessToken = authHeader.match(/^Bearer\s+(.+)$/i)?.[1]
-  const supabaseUrl = String(env.SUPABASE_URL || '').trim().replace(/\/+$/, '')
-  const supabaseKey = String(env.SUPABASE_ANON_KEY || env.SUPABASE_PUBLISHABLE_KEY || '').trim()
+  const supabaseUrl = [
+    env.SUPABASE_URL,
+    env.REACT_APP_SUPABASE_URL,
+    env.VITE_SUPABASE_URL,
+    env.NEXT_PUBLIC_SUPABASE_URL,
+  ]
+    .map((candidate) => cleanEnvString(candidate).replace(/\/+$/, ''))
+    .find(Boolean) || ''
 
-  if (!supabaseUrl || !isPublicSupabaseKey(supabaseKey)) {
+  const supabaseKey = [
+    env.SUPABASE_ANON_KEY,
+    env.SUPABASE_PUBLISHABLE_KEY,
+    env.REACT_APP_SUPABASE_ANON_KEY,
+    env.REACT_APP_SUPABASE_KEY,
+  ]
+    .map((candidate) => cleanEnvString(candidate))
+    .find((candidate) => isPublicSupabaseKey(candidate)) || ''
+
+  if (!supabaseUrl || !supabaseKey) {
     return jsonResponse({ error: 'Luna AI is not configured with a public Supabase key.' }, 503)
   }
   if (!accessToken) {
@@ -101,32 +121,38 @@ export async function onRequestPost({ request, env }) {
       return jsonResponse({ error: 'Your session could not be verified. Please sign in again.' }, 401)
     }
 
-    // The verified user identity is deliberately not forwarded to the model.
     const context = sanitizeCycleSummary(payload?.cycleSummary)
-    const contextMessage = context.checkInCount
-      ? `Optional self-reported cycle context (phase, mood, energy, the latest explicitly logged period start, and a retrospective average between distinct logged period starts when available; no name, email, account ID, symptom log, libido, or intimacy logs): ${JSON.stringify(context)}. Symptoms are not stored in this summary; only discuss symptoms the user mentions in the current conversation.`
-      : 'The user has no saved cycle check-ins available to you. Do not assume personal patterns or infer a period date, symptoms, or cycle length.'
+    const locale = ALLOWED_LOCALES.has(payload?.locale) ? payload.locale : 'en'
+    const languageDirective = locale === 'am'
+      ? 'Preferred UI language: Amharic (አማርኛ). Reply naturally in Amharic unless the user explicitly asks for English.'
+      : 'Preferred UI language: English (unless the user writes in Amharic, in which case match their language).'
+
+    const contextMessage = context.checkInCount || context.activePhase || context.cycleDay
+      ? `Optional self-reported cycle profile (phase, cycle day from logged period start, mood, energy, period timing, and retrospective cycle average when available; no name, email, account ID, or partner contacts): ${JSON.stringify(context)}. ${languageDirective}`
+      : `The user has no saved check-ins yet. Do not invent personal cycle dates or averages. ${languageDirective}`
 
     const recentAssistantReplies = messages
       .filter((item) => item.role === 'assistant')
       .slice(-3)
       .map((item) => item.content.slice(0, 600))
     const recentReplyNote = recentAssistantReplies.length
-      ? `Recent Luna replies to avoid echoing: ${JSON.stringify(recentAssistantReplies)}`
-      : 'There are no earlier Luna replies to avoid repeating.'
+      ? `Recent Luna replies to avoid repeating: ${JSON.stringify(recentAssistantReplies)}`
+      : 'No earlier replies in this turn window.'
+
     const buildPromptMessages = (retry = false) => [
       { role: 'system', content: SYSTEM_PROMPT },
       { role: 'system', content: contextMessage },
       {
         role: 'system',
         content: retry
-          ? `Your draft echoed a recent response. Try again with a genuinely fresh, specific answer to the latest user message. Do not reuse the opening, structure, or closing question. ${recentReplyNote}`
-          : `Vary this reply and avoid repeating prior wording. ${recentReplyNote}`,
+          ? `Your draft echoed a previous message. Write a completely fresh, lively, specific reply to the latest user message without repeating structure or phrasing. ${recentReplyNote}`
+          : `Keep full thread coherence with the messages below, understand shorthand/fragments from context, and vary phrasing. ${recentReplyNote}`,
       },
       ...messages,
     ]
+
     const model = env.LUNA_MODEL || DEFAULT_MODEL
-    const generationOptions = { max_tokens: 760, temperature: 0.82, top_p: 0.92 }
+    const generationOptions = { max_tokens: 850, temperature: 0.85, top_p: 0.93 }
     let result = await env.AI.run(model, { messages: buildPromptMessages(), ...generationOptions })
     let reply = extractModelReply(result)
 
@@ -142,7 +168,6 @@ export async function onRequestPost({ request, env }) {
 
     return jsonResponse({ reply: reply.trim().slice(0, 4000), mode: 'ai' })
   } catch (error) {
-    // Avoid logging prompt, messages, health context, or credentials.
     console.error('Luna AI request failed:', error?.name || 'UnknownError')
     return jsonResponse({ error: 'Luna is taking a quiet moment. Please try again.' }, 502)
   }
@@ -166,7 +191,7 @@ function normalizeAssistantText(value) {
 const sanitizeMessages = (items) => {
   if (!Array.isArray(items)) return []
   return items
-    .slice(-12)
+    .slice(-14)
     .filter((item) => item && (item.role === 'user' || item.role === 'assistant'))
     .map((item) => ({
       role: item.role,
@@ -188,7 +213,7 @@ const sanitizeCycleSummary = (input) => {
   }
 
   const recentCheckIns = Array.isArray(input.recentCheckIns)
-    ? input.recentCheckIns.slice(0, 8).map((item) => ({
+    ? input.recentCheckIns.slice(0, 10).map((item) => ({
       daysAgo: clampInteger(item?.daysAgo, 0, 3650),
       phase: ALLOWED_PHASES.has(item?.phase) ? item.phase : 'unknown',
       mood: clampScale(item?.mood),
@@ -202,6 +227,11 @@ const sanitizeCycleSummary = (input) => {
     averageEnergy: clampScale(input.averageEnergy),
     phaseCounts,
     mostCommonPhase: ALLOWED_PHASES.has(input.mostCommonPhase) ? input.mostCommonPhase : null,
+    activePhase: ALLOWED_PHASES.has(input.activePhase) ? input.activePhase : null,
+    tone: ALLOWED_TONES.has(input.tone) ? input.tone : 'balanced',
+    cycleDay: input.cycleDay ? clampInteger(input.cycleDay, 1, 120) : null,
+    periodActive: Boolean(input.periodActive),
+    estimatedPeriodEnd: sanitizeDate(input.estimatedPeriodEnd),
     lastPeriodStartDate: sanitizeDate(input.lastPeriodStartDate),
     averageCycleLength: clampCycleLength(input.averageCycleLength),
     cycleLengthObservations: clampInteger(input.cycleLengthObservations, 0, 100),
@@ -235,9 +265,9 @@ const clampScale = (value) => {
 }
 
 const isPublicSupabaseKey = (value) => {
-  const key = String(value || '').trim()
-  if (/^sb_secret_/i.test(key)) return false
-  if (/^sb_publishable_[A-Za-z0-9_-]+$/i.test(key)) return true
+  const key = cleanEnvString(value)
+  if (!key || /^sb_secret_/i.test(key) || /service_role/i.test(key)) return false
+  if (/^sb_publishable_[A-Za-z0-9_.-]+$/i.test(key)) return true
 
   const jwtParts = key.split('.')
   if (jwtParts.length !== 3) return false
@@ -249,3 +279,13 @@ const isPublicSupabaseKey = (value) => {
     return false
   }
 }
+
+export const onRequestOptions = async () =>
+  new Response(null, {
+    status: 204,
+    headers: {
+      Allow: 'POST, OPTIONS',
+      'Cache-Control': 'no-store',
+    },
+  })
+

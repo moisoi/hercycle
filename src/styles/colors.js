@@ -38,6 +38,19 @@ export const colors = {
   muted: '#907F8B',
   disabled: '#E6DCE0',
 
+  // Elevation tokens
+  shadows: {
+    soft: {
+      boxShadow: '0 10px 30px rgba(99, 61, 81, 0.07), 0 2px 8px rgba(176, 126, 138, 0.04)',
+    },
+    elevated: {
+      boxShadow: '0 18px 44px rgba(99, 61, 81, 0.12), 0 4px 12px rgba(176, 126, 138, 0.06)',
+    },
+    glow: {
+      boxShadow: '0 0 32px rgba(189, 98, 125, 0.22)',
+    },
+  },
+
   // Motion timings shared by interactive elements.
   transitions: {
     fast: 'all 180ms ease-out',

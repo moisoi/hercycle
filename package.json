@@ -4,13 +4,14 @@
   "description": "A premium period tracking web app for women aged 20-28",
   "main": "src/index.js",
   "scripts": {
-    "start": "react-scripts start",
+    "start": "node scripts/preview-server.mjs",
+    "dev": "HOST=0.0.0.0 DANGEROUSLY_DISABLE_HOST_CHECK=true react-scripts start",
     "build": "react-scripts build",
     "test": "react-scripts test",
     "eject": "react-scripts eject"
   },
   "engines": {
-    "node": "24.x"
+    "node": ">=22.0.0"
   },
   "dependencies": {
     "@emotion/react": "^11.14.0",
@@ -30,6 +31,9 @@
     "react-router-dom": "^6.28.0"
   },
   "devDependencies": {
+    "@testing-library/jest-dom": "^5.17.0",
+    "@testing-library/react": "^14.3.1",
+    "@testing-library/user-event": "^14.5.2",
     "react-scripts": "5.0.1",
     "typescript": "^4.9.5"
   },
